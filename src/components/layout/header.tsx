@@ -23,12 +23,10 @@ export function Header() {
     <header className="flex h-16 items-center justify-between border-b px-6">
       <div />
       <DropdownMenu>
-        <DropdownMenuTrigger>
-          <button type="button" className="flex items-center gap-2">
-            <Avatar className="h-8 w-8">
-              <AvatarFallback>U</AvatarFallback>
-            </Avatar>
-          </button>
+        <DropdownMenuTrigger className="flex items-center gap-2">
+          <Avatar className="h-8 w-8">
+            <AvatarFallback>U</AvatarFallback>
+          </Avatar>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem onClick={handleSignOut}>Sign Out</DropdownMenuItem>
