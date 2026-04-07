@@ -35,9 +35,9 @@ function parseDate(val: string | number | undefined | null): string | null {
   return null;
 }
 
-// Strip two leading zeros that Home Depot adds to PO numbers
+// Strip two leading zeros that Home Depot adds (10-digit → 8-digit PO)
 function normalizePO(po: string): string {
-  if (po.startsWith("00")) return po.slice(2);
+  if (po.length === 10 && po.startsWith("00")) return po.slice(2);
   return po;
 }
 
