@@ -133,6 +133,51 @@ export default async function OrderDetailPage({ params }: Props) {
         </Card>
       </div>
 
+      {/* Customer & Shipping Info */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {order.raw_payload?.customer_name && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Customer</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1">
+              <p className="text-sm font-medium">{order.raw_payload.customer_name}</p>
+              {order.raw_payload.company && (
+                <p className="text-sm text-muted-foreground">{order.raw_payload.company}</p>
+              )}
+              {order.raw_payload.customer_phone && (
+                <p className="text-sm text-muted-foreground">{order.raw_payload.customer_phone}</p>
+              )}
+              {order.raw_payload.address_type && (
+                <Badge variant="outline" className="mt-1">{order.raw_payload.address_type}</Badge>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {order.shipping_address?.line1 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Shipping Address</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1">
+              <p className="text-sm">{order.shipping_address.line1}</p>
+              {order.shipping_address.line2 && (
+                <p className="text-sm">{order.shipping_address.line2}</p>
+              )}
+              <p className="text-sm">
+                {order.shipping_address.city}, {order.shipping_address.state} {order.shipping_address.zip}
+              </p>
+              {order.shipping_method && (
+                <p className="text-sm text-muted-foreground mt-2">
+                  Ship via: {order.shipping_method}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
       {/* Order Items */}
       <Card>
         <CardHeader>

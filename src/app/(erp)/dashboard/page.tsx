@@ -14,21 +14,23 @@ import {
   Crown,
 } from "lucide-react";
 
-// Direct SQL for aggregations to avoid Supabase 1000-row limit
-async function runSQL<T = Record<string, any>>(sql: string): Promise<T[]> {
-  // @ts-ignore
-  const pg = await import("pg");
-  const client = new pg.default.Client({
-    connectionString: `postgresql://postgres:${process.env.SUPABASE_DB_PASSWORD || "Imissu4ever!"}@db.bzzprwayvlopkffxkbji.supabase.co:5432/postgres`,
-    ssl: { rejectUnauthorized: false },
-  });
-  await client.connect();
-  try {
-    const { rows } = await client.query(sql);
-    return rows as T[];
-  } finally {
-    await client.end();
+// Fetch all rows from a table, paginating past the 1000-row limit
+async function fetchAll<T = Record<string, any>>(
+  supabase: any,
+  table: string,
+  select: string,
+): Promise<T[]> {
+  const all: T[] = [];
+  let from = 0;
+  const PAGE = 1000;
+  while (true) {
+    const { data } = await supabase.from(table).select(select).range(from, from + PAGE - 1);
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < PAGE) break;
+    from += PAGE;
   }
+  return all;
 }
 
 async function getDashboardData() {
@@ -46,9 +48,8 @@ async function getDashboardData() {
     { data: recentOrders },
     { data: categoryBreakdown },
     { data: inventoryStats },
-    channelRows,
-    topProductRows,
-    orderTotals,
+    allOrders,
+    allOrderItems,
   ] = await Promise.all([
     supabase.from("products").select("*", { count: "exact", head: true }),
     supabase.from("products").select("*", { count: "exact", head: true }).eq("active", true),
@@ -70,33 +71,8 @@ async function getDashboardData() {
       .limit(5),
     supabase.from("products").select("category"),
     supabase.from("inventory").select("quantity_on_hand, quantity_reserved, quantity_available"),
-    // Channel breakdown via SQL
-    runSQL(`
-      SELECT
-        COALESCE(raw_payload->>'retailer', channel_source::text) as channel,
-        count(*) as orders,
-        COALESCE(sum(total), 0) as revenue,
-        count(*) FILTER (WHERE status = 'shipped') as shipped,
-        count(*) FILTER (WHERE status = 'pending') as pending,
-        count(*) FILTER (WHERE status = 'cancelled') as cancelled
-      FROM orders
-      GROUP BY 1
-      ORDER BY count(*) DESC
-    `),
-    // Top products via SQL
-    runSQL(`
-      SELECT
-        sku_code as sku,
-        MAX(product_name) as name,
-        SUM(quantity) as qty,
-        SUM(total_price) as revenue
-      FROM order_items
-      GROUP BY sku_code
-      ORDER BY SUM(quantity) DESC
-      LIMIT 10
-    `),
-    // Order totals via SQL
-    runSQL(`SELECT count(*) as total_count, COALESCE(sum(total), 0) as total_revenue FROM orders`),
+    fetchAll(supabase, "orders", "channel_source, status, total, raw_payload"),
+    fetchAll(supabase, "order_items", "sku_code, product_name, quantity, total_price"),
   ]);
 
   // Aggregate categories
@@ -115,27 +91,33 @@ async function getDashboardData() {
     totalAvailable += inv.quantity_available;
   });
 
-  // Channel breakdown from SQL
+  // Channel breakdown (aggregated in JS)
   const channels: Record<string, { orders: number; revenue: number; shipped: number; pending: number; cancelled: number }> = {};
-  channelRows.forEach((r: any) => {
-    channels[r.channel] = {
-      orders: parseInt(r.orders),
-      revenue: parseFloat(r.revenue),
-      shipped: parseInt(r.shipped),
-      pending: parseInt(r.pending),
-      cancelled: parseInt(r.cancelled),
-    };
-  });
+  let totalOrderCount = 0;
+  let totalRevenue = 0;
+  for (const o of allOrders) {
+    const channel = o.raw_payload?.retailer || o.channel_source;
+    if (!channels[channel]) channels[channel] = { orders: 0, revenue: 0, shipped: 0, pending: 0, cancelled: 0 };
+    channels[channel].orders++;
+    channels[channel].revenue += parseFloat(o.total) || 0;
+    if (o.status === "shipped") channels[channel].shipped++;
+    if (o.status === "pending") channels[channel].pending++;
+    if (o.status === "cancelled") channels[channel].cancelled++;
+    totalOrderCount++;
+    totalRevenue += parseFloat(o.total) || 0;
+  }
 
-  // Top products from SQL
-  const topProducts = topProductRows.map((r: any) => ({
-    sku: r.sku,
-    name: r.name,
-    qty: parseInt(r.qty),
-    revenue: parseFloat(r.revenue),
-  }));
-
-  const totals = orderTotals[0] || { total_count: 0, total_revenue: 0 };
+  // Top products (aggregated in JS)
+  const productAgg: Record<string, { name: string; qty: number; revenue: number }> = {};
+  for (const item of allOrderItems) {
+    if (!productAgg[item.sku_code]) productAgg[item.sku_code] = { name: item.product_name, qty: 0, revenue: 0 };
+    productAgg[item.sku_code].qty += item.quantity;
+    productAgg[item.sku_code].revenue += parseFloat(item.total_price) || 0;
+  }
+  const topProducts = Object.entries(productAgg)
+    .map(([sku, d]) => ({ sku, ...d }))
+    .sort((a, b) => b.qty - a.qty)
+    .slice(0, 10);
 
   return {
     totalProducts: totalProducts ?? 0,
@@ -151,8 +133,8 @@ async function getDashboardData() {
     inventory: { totalOnHand, totalReserved, totalAvailable },
     channels,
     topProducts,
-    totalOrderCount: parseInt(totals.total_count),
-    totalRevenue: parseFloat(totals.total_revenue),
+    totalOrderCount,
+    totalRevenue,
   };
 }
 

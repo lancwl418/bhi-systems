@@ -14,6 +14,7 @@ import { createServiceSupabase } from "@/lib/supabase/server";
 import Link from "next/link";
 import { OrderFilters } from "./filters";
 import { ImportCSV } from "./import-csv";
+import { ImportPDF } from "./import-pdf";
 
 interface Props {
   searchParams: Promise<{ status?: string; search?: string; page?: string }>;
@@ -86,7 +87,10 @@ export default async function OrdersPage({ searchParams }: Props) {
             {total.toLocaleString()} orders total
           </p>
         </div>
-        <ImportCSV />
+        <div className="flex items-center gap-2">
+          <ImportPDF />
+          <ImportCSV />
+        </div>
       </div>
 
       <OrderFilters statusCounts={statusCounts} />
