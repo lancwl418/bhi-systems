@@ -48,7 +48,7 @@ export function UploadRemittance() {
       <input
         ref={fileRef}
         type="file"
-        accept=".xls,.xlsx"
+        accept=".xls,.xlsx,.csv"
         onChange={handleUpload}
         className="hidden"
         id="remittance-upload"

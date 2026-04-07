@@ -5,34 +5,93 @@ import * as XLSX from "xlsx";
 
 export const maxDuration = 120;
 
-function parseCurrency(val: string | number): number {
+/* ── helpers ─────────────────────────────────────────────────────── */
+
+function parseCurrency(val: string | number | undefined | null): number {
   if (typeof val === "number") return val;
   if (!val) return 0;
   const cleaned = String(val).replace(/[$,\s]/g, "");
   return parseFloat(cleaned) || 0;
 }
 
-function parseXLSDate(val: string | number): string | null {
+function parseDate(val: string | number | undefined | null): string | null {
   if (!val) return null;
-  const s = String(val);
-  // Format: "20260406" → "2026-04-06"
+  const s = String(val).trim();
+  if (s === "N/A" || s === "n/a") return null;
+
+  // "20260406" → "2026-04-06"
   if (/^\d{8}$/.test(s)) {
     return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
   }
-  // Format: "2026-04-03 19:52:36"
+  // "2026-04-03 ..." or "2026-04-03"
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
     return s.slice(0, 10);
+  }
+  // "MM/DD/YYYY"
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) {
+    return `${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
   }
   return null;
 }
 
-// Strip the two leading zeros that Home Depot XLS adds (10-digit → 8-digit PO)
+// Strip two leading zeros that Home Depot adds (10-digit → 8-digit PO)
 function normalizePO(po: string): string {
-  if (po.length === 10 && po.startsWith("00")) {
-    return po.slice(2);
-  }
+  if (po.length === 10 && po.startsWith("00")) return po.slice(2);
   return po;
 }
+
+// Column name aliases — maps alternative names to the canonical key
+const COLUMN_ALIASES: Record<string, string> = {
+  "PO Number": "Purchase Order Number",
+  "Invoice Adjustment Reason": "Invoice Adjustment Reason Code",
+};
+
+/** Locate the header row and return normalised row objects. */
+function parseSheet(sheet: XLSX.WorkSheet): Record<string, any>[] {
+  // Read as raw 2-D array so we can skip metadata rows
+  const raw: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+
+  // Known columns that MUST appear in the header row
+  const REQUIRED = ["Invoice Number", "Invoice Amount"];
+
+  let headerIdx = -1;
+  let headers: string[] = [];
+
+  for (let i = 0; i < Math.min(raw.length, 20); i++) {
+    const row = raw[i].map((c: any) => String(c).trim());
+    if (REQUIRED.every((col) => row.includes(col))) {
+      headerIdx = i;
+      headers = row;
+      break;
+    }
+  }
+
+  if (headerIdx === -1) {
+    // Fallback: assume first row is the header (original XLS behaviour)
+    return XLSX.utils.sheet_to_json(sheet);
+  }
+
+  // Normalise header names via aliases
+  const normHeaders = headers.map((h) => COLUMN_ALIASES[h] || h);
+
+  // Build row objects from remaining rows
+  const rows: Record<string, any>[] = [];
+  for (let i = headerIdx + 1; i < raw.length; i++) {
+    const cells = raw[i];
+    // Skip empty rows
+    if (!cells || cells.every((c: any) => !c && c !== 0)) continue;
+
+    const obj: Record<string, any> = {};
+    for (let j = 0; j < normHeaders.length; j++) {
+      obj[normHeaders[j]] = cells[j] ?? "";
+    }
+    rows.push(obj);
+  }
+  return rows;
+}
+
+/* ── POST handler ────────────────────────────────────────────────── */
 
 export async function POST(request: NextRequest) {
   try {
@@ -45,24 +104,21 @@ export async function POST(request: NextRequest) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const workbook = XLSX.read(buffer, { type: "buffer" });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet);
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = parseSheet(sheet);
 
     if (rows.length === 0) {
       return NextResponse.json({ error: "Empty spreadsheet" }, { status: 400 });
     }
 
-    // Extract header info from first row
-    const first = rows[0];
-    const retailer = normalizeRetailer(first["Merchant"] || "");
-    const paymentDate = parseXLSDate(first["Payment Date"]);
-    const eftNumber = String(first["EFT Number"] || "");
-    const balanceDue = parseCurrency(first["Balance Due"]);
+    // Extract header-level info from data rows
+    const retailer = normalizeRetailer(String(rows[0]["Merchant"] || ""));
+    const paymentDate = parseDate(rows[0]["Payment Date"]);
+    const eftNumber = String(rows[0]["EFT Number"] || "").trim();
 
     const supabase = await createServiceSupabase();
 
-    // Check for duplicate upload (same EFT number)
+    // Duplicate check by EFT number
     if (eftNumber) {
       const { data: existing } = await supabase
         .from("remittances")
@@ -76,15 +132,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Collect all PO numbers from XLS for batch lookup
+    // Collect all PO numbers for batch lookup
     const poNumbers = new Set<string>();
     rows.forEach((r) => {
-      const po = String(r["Purchase Order Number"] || "").trim();
+      const po = String(r["Purchase Order Number"] || r["PO Number"] || "").trim();
       if (po) poNumbers.add(normalizePO(po));
     });
 
     // Look up orders by channel_order_id (PO number)
-    const orderMap: Record<string, string> = {}; // normalized PO → order.id
+    const orderMap: Record<string, string> = {};
     if (poNumbers.size > 0) {
       const poArr = Array.from(poNumbers);
       for (let i = 0; i < poArr.length; i += 200) {
@@ -119,15 +175,15 @@ export async function POST(request: NextRequest) {
 
     rows.forEach((r) => {
       const lineNum = parseInt(r["Transaction Line Number"]) || lines.length + 1;
-      const rawPO = String(r["Purchase Order Number"] || "").trim();
+      const rawPO = String(r["Purchase Order Number"] || r["PO Number"] || "").trim();
       const po = rawPO ? normalizePO(rawPO) : "";
       const invoiceNum = String(r["Invoice Number"] || "").trim();
-      const invoiceDate = parseXLSDate(r["Invoice Date"]);
+      const invoiceDate = parseDate(r["Invoice Date"]);
       const invoiceAmount = parseCurrency(r["Invoice Amount"]);
       const lineAmount = parseCurrency(r["Line Balance Due"]);
       const discount = parseCurrency(r["Line Discount"] || r["Invoice Discount"]);
       const adjNum = String(r["Invoice Adjustment Number"] || "").trim();
-      const adjDate = parseXLSDate(r["Invoice Adjustment Date"]);
+      const adjDate = parseDate(r["Invoice Adjustment Date"]);
       const adjReason = String(r["Invoice Adjustment Reason Code"] || "").trim();
 
       let lineType = "payment";
@@ -155,6 +211,8 @@ export async function POST(request: NextRequest) {
         line_type: lineType,
       });
     });
+
+    const balanceDue = totalPaid - totalDeductions;
 
     // Insert remittance
     const { data: remittance, error: remErr } = await supabase
