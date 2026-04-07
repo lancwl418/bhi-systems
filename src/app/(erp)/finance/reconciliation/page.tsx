@@ -129,13 +129,11 @@ async function getReconciliationData() {
 
     const oLines = linesByOrderId[o.id] || [];
     for (const l of oLines) {
-      const inv = parseFloat(l.invoice_amount) || 0;
-      const disc = parseFloat(l.discount) || 0;
       const amt = parseFloat(l.line_amount) || 0;
-      m.invoiceTotal += inv; ch.invoiceTotal += inv;
-      m.deductions += disc; ch.deductions += disc;
-      if (amt < 0) { m.deductions += Math.abs(amt); ch.deductions += Math.abs(amt); }
-      m.netReceived += amt; ch.netReceived += amt;
+      if (amt >= 0) { m.invoiceTotal += amt; ch.invoiceTotal += amt; }
+      else { m.deductions += Math.abs(amt); ch.deductions += Math.abs(amt); }
+      m.netReceived += amt;
+      ch.netReceived += amt;
       m.lines.push(l);
     }
   }
@@ -146,15 +144,13 @@ async function getReconciliationData() {
     const m = ensureMonth(month);
     m[list].push(l);
     m.lines.push(l);
-    const inv = parseFloat(l.invoice_amount) || 0;
-    const disc = parseFloat(l.discount) || 0;
     const amt = parseFloat(l.line_amount) || 0;
     // Determine channel from remittance retailer
     const ch = ensureChannel(m, normalizeRetailer(l.remittances?.retailer || ""));
-    m.invoiceTotal += inv; ch.invoiceTotal += inv;
-    m.deductions += disc; ch.deductions += disc;
-    if (amt < 0) { m.deductions += Math.abs(amt); ch.deductions += Math.abs(amt); }
-    m.netReceived += amt; ch.netReceived += amt;
+    if (amt >= 0) { m.invoiceTotal += amt; ch.invoiceTotal += amt; }
+    else { m.deductions += Math.abs(amt); ch.deductions += Math.abs(amt); }
+    m.netReceived += amt;
+    ch.netReceived += amt;
   }
   for (const l of unmatchedLines) assignLine(l, "unmatchedLines");
   for (const l of noPOLines) assignLine(l, "noPOLines");
