@@ -142,7 +142,7 @@ async function getReconciliationData() {
 
   // Assign unmatched/noPO lines
   function assignLine(l: any, list: "unmatchedLines" | "noPOLines") {
-    const month = (l.invoice_date || l.payment_date || l.adjustment_date || "").slice(0, 7) || "unknown";
+    const month = (l.invoice_date || l.adjustment_date || "").slice(0, 7) || "unknown";
     const m = ensureMonth(month);
     m[list].push(l);
     m.lines.push(l);
