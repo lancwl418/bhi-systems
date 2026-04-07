@@ -156,8 +156,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Parse lines
-    let totalPaid = 0;
-    let totalDeductions = 0;
+    let totalInvoiced = 0;
+    let totalDiscount = 0;
+    let totalNet = 0;
     const lines: {
       line_number: number;
       order_id: string | null;
@@ -186,12 +187,13 @@ export async function POST(request: NextRequest) {
       const adjDate = parseDate(r["Invoice Adjustment Date"]);
       const adjReason = String(r["Invoice Adjustment Reason Code"] || "").trim();
 
+      totalInvoiced += invoiceAmount;
+      totalDiscount += discount;
+      totalNet += lineAmount;
+
       let lineType = "payment";
       if (lineAmount < 0) {
         lineType = po ? "deduction" : "adjustment";
-        totalDeductions += Math.abs(lineAmount);
-      } else {
-        totalPaid += lineAmount;
       }
 
       const orderId = po ? (orderMap[po] || null) : null;
@@ -212,8 +214,6 @@ export async function POST(request: NextRequest) {
       });
     });
 
-    const balanceDue = totalPaid - totalDeductions;
-
     // Insert remittance
     const { data: remittance, error: remErr } = await supabase
       .from("remittances")
@@ -221,9 +221,9 @@ export async function POST(request: NextRequest) {
         retailer,
         payment_date: paymentDate,
         eft_number: eftNumber,
-        balance_due: balanceDue,
-        total_paid: totalPaid,
-        total_deductions: totalDeductions,
+        balance_due: totalNet,
+        total_paid: totalInvoiced,
+        total_deductions: totalDiscount,
         file_name: file.name,
       })
       .select("id")
@@ -254,9 +254,9 @@ export async function POST(request: NextRequest) {
       retailer,
       payment_date: paymentDate,
       eft_number: eftNumber,
-      balance_due: balanceDue,
-      total_paid: totalPaid,
-      total_deductions: totalDeductions,
+      balance_due: totalNet,
+      total_paid: totalInvoiced,
+      total_deductions: totalDiscount,
       lines: lines.length,
       matched,
       unmatched,

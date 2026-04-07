@@ -38,10 +38,9 @@ export function MonthDetail({ month, monthLabel, data, channelFilter }: { month:
   for (const l of data.lines) {
     if (!l.order_id) continue;
     if (!paymentByOrder[l.order_id]) paymentByOrder[l.order_id] = { paid: 0, deducted: 0, net: 0 };
-    const amt = parseFloat(l.line_amount) || 0;
-    if (amt >= 0) paymentByOrder[l.order_id].paid += amt;
-    else paymentByOrder[l.order_id].deducted += Math.abs(amt);
-    paymentByOrder[l.order_id].net += amt;
+    paymentByOrder[l.order_id].paid += parseFloat(l.invoice_amount) || 0;
+    paymentByOrder[l.order_id].deducted += parseFloat(l.discount) || 0;
+    paymentByOrder[l.order_id].net += parseFloat(l.line_amount) || 0;
   }
 
   // Enrich orders

@@ -78,7 +78,7 @@ export default async function RemittanceDetailPage({ params }: Props) {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Actual Received</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Net Payment</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold text-green-600">
