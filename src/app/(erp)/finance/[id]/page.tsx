@@ -20,13 +20,23 @@ async function getRemittance(id: string) {
 
   if (!remittance) return null;
 
-  const { data: lines } = await supabase
-    .from("remittance_lines")
-    .select("*, orders(channel_order_id, status, total)")
-    .eq("remittance_id", id)
-    .order("line_number");
+  // Fetch all lines (Supabase defaults to 1000 max per query)
+  const allLines: any[] = [];
+  let from = 0;
+  while (true) {
+    const { data } = await supabase
+      .from("remittance_lines")
+      .select("*, orders(channel_order_id, status, total)")
+      .eq("remittance_id", id)
+      .order("line_number")
+      .range(from, from + 999);
+    if (!data || data.length === 0) break;
+    allLines.push(...data);
+    if (data.length < 1000) break;
+    from += 1000;
+  }
 
-  return { ...remittance, lines: lines ?? [] };
+  return { ...remittance, lines: allLines };
 }
 
 export default async function RemittanceDetailPage({ params }: Props) {
