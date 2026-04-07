@@ -77,6 +77,7 @@ export function UploadRemittance() {
             </p>
             <p className="text-green-700 mt-1">
               {result.lines} lines: {result.matched} matched, {result.unmatched} unmatched, {result.no_po} no PO
+              {result.duplicates_skipped > 0 && `, ${result.duplicates_skipped} duplicates skipped`}
             </p>
             <p className="text-green-700">
               Paid: ${result.total_paid?.toLocaleString()} | Deductions: ${result.total_deductions?.toLocaleString()}

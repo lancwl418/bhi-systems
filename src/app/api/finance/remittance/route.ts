@@ -115,24 +115,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Empty spreadsheet" }, { status: 400 });
     }
 
-    // Extract header-level info from data rows
+    // Extract retailer from first row
     const retailer = normalizeRetailer(String(rows[0]["Merchant"] || ""));
-    const paymentDate = parseDate(rows[0]["Payment Date"]);
-    const eftNumber = String(rows[0]["EFT Number"] || "").trim();
 
     const supabase = await createServiceSupabase();
 
-    // Duplicate check by EFT number
-    if (eftNumber) {
-      const { data: existing } = await supabase
-        .from("remittances")
-        .select("id")
-        .eq("eft_number", eftNumber)
-        .limit(1);
-      if (existing && existing.length > 0) {
-        return NextResponse.json({
-          error: `Remittance with EFT ${eftNumber} already uploaded`,
-        }, { status: 400 });
+    // Collect all EFT+invoice pairs from file for duplicate check
+    const eftInvoicePairs: { eft: string; invoice: string }[] = [];
+    for (const r of rows) {
+      const eft = String(r["EFT Number"] || "").trim();
+      const invoice = String(r["Invoice Number"] || "").trim();
+      if (eft && invoice) eftInvoicePairs.push({ eft, invoice });
+    }
+
+    // Batch-check existing (eft_number, invoice_number) in DB
+    const existingSet = new Set<string>();
+    if (eftInvoicePairs.length > 0) {
+      const uniqueEfts = [...new Set(eftInvoicePairs.map((p) => p.eft))];
+      for (let i = 0; i < uniqueEfts.length; i += 200) {
+        const batch = uniqueEfts.slice(i, i + 200);
+        const { data } = await supabase
+          .from("remittance_lines")
+          .select("eft_number, invoice_number")
+          .in("eft_number", batch);
+        data?.forEach((d: any) => {
+          existingSet.add(`${d.eft_number}::${d.invoice_number}`);
+        });
       }
     }
 
@@ -163,8 +171,12 @@ export async function POST(request: NextRequest) {
     let totalInvoiced = 0;
     let totalDiscount = 0;
     let totalNet = 0;
+    let duplicateCount = 0;
+
     const lines: {
       line_number: number;
+      eft_number: string;
+      payment_date: string | null;
       order_id: string | null;
       po_number: string;
       invoice_number: string;
@@ -179,10 +191,19 @@ export async function POST(request: NextRequest) {
     }[] = [];
 
     rows.forEach((r) => {
+      const eft = String(r["EFT Number"] || "").trim();
+      const invoiceNum = String(r["Invoice Number"] || "").trim();
+
+      // Skip duplicates (same EFT + invoice already in DB)
+      if (eft && invoiceNum && existingSet.has(`${eft}::${invoiceNum}`)) {
+        duplicateCount++;
+        return;
+      }
+
       const lineNum = parseInt(r["Transaction Line Number"]) || lines.length + 1;
+      const paymentDate = parseDate(r["Payment Date"]);
       const rawPO = String(r["Purchase Order Number"] || r["PO Number"] || "").trim();
       const po = rawPO ? normalizePO(rawPO) : "";
-      const invoiceNum = String(r["Invoice Number"] || "").trim();
       const invoiceDate = parseDate(r["Invoice Date"]);
       const invoiceAmount = parseCurrency(r["Invoice Amount"]);
       const lineAmount = parseCurrency(r["Line Balance Due"]);
@@ -205,6 +226,8 @@ export async function POST(request: NextRequest) {
 
       lines.push({
         line_number: lineNum,
+        eft_number: eft,
+        payment_date: paymentDate,
         order_id: orderId,
         po_number: po,
         invoice_number: invoiceNum,
@@ -219,13 +242,23 @@ export async function POST(request: NextRequest) {
       });
     });
 
+    if (lines.length === 0) {
+      return NextResponse.json({
+        error: `All ${duplicateCount} lines are duplicates (already uploaded)`,
+      }, { status: 400 });
+    }
+
+    // Collect unique EFTs for remittance-level display
+    const uniqueEfts = [...new Set(lines.map((l) => l.eft_number).filter(Boolean))];
+    const firstPaymentDate = lines.find((l) => l.payment_date)?.payment_date || null;
+
     // Insert remittance
     const { data: remittance, error: remErr } = await supabase
       .from("remittances")
       .insert({
         retailer,
-        payment_date: paymentDate,
-        eft_number: eftNumber,
+        payment_date: firstPaymentDate,
+        eft_number: uniqueEfts.join(", "),
         balance_due: totalNet,
         total_paid: totalInvoiced,
         total_deductions: totalDiscount,
@@ -257,8 +290,8 @@ export async function POST(request: NextRequest) {
       ok: true,
       remittance_id: remittance.id,
       retailer,
-      payment_date: paymentDate,
-      eft_number: eftNumber,
+      payment_date: firstPaymentDate,
+      eft_number: uniqueEfts.join(", "),
       balance_due: totalNet,
       total_paid: totalInvoiced,
       total_deductions: totalDiscount,
@@ -266,6 +299,7 @@ export async function POST(request: NextRequest) {
       matched,
       unmatched,
       no_po: noPO,
+      duplicates_skipped: duplicateCount,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
