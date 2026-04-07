@@ -35,9 +35,13 @@ function parseDate(val: string | number | undefined | null): string | null {
   return null;
 }
 
-// Strip two leading zeros that Home Depot adds (10-digit → 8-digit PO)
+// Normalize PO: HD adds "00" prefix making 10-digit POs, and XLSX may
+// parse POs as numbers stripping all leading zeros.  Orders table stores 8-digit POs.
 function normalizePO(po: string): string {
+  // 10-digit with "00" prefix → strip to 8
   if (po.length === 10 && po.startsWith("00")) return po.slice(2);
+  // XLSX ate leading zeros → pad back to 8 digits
+  if (po.length < 8 && /^\d+$/.test(po)) return po.padStart(8, "0");
   return po;
 }
 
