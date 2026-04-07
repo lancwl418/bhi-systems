@@ -189,6 +189,7 @@ export async function POST(request: NextRequest) {
 
       totalInvoiced += invoiceAmount;
       totalDiscount += discount;
+      if (lineAmount < 0) totalDiscount += Math.abs(lineAmount);
       totalNet += lineAmount;
 
       let lineType = "payment";

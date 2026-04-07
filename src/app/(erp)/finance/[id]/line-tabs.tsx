@@ -74,9 +74,11 @@ export function LineTabs({
     }
     const g = groupMap[l.po_number];
     g.lines.push(l);
+    const amt = parseFloat(l.line_amount) || 0;
     g.invoiceTotal += parseFloat(l.invoice_amount) || 0;
     g.deductions += parseFloat(l.discount) || 0;
-    g.net += parseFloat(l.line_amount) || 0;
+    if (amt < 0) g.deductions += Math.abs(amt);
+    g.net += amt;
     if (l.order_id && !g.order_id) {
       g.order_id = l.order_id;
       g.order_po = l.orders?.channel_order_id || null;
