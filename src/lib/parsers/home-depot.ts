@@ -131,14 +131,22 @@ function parseDate(raw: string): string {
 }
 
 function parseShipTo(text: string) {
-  const result = {
+  const result: {
+    name: string;
+    line1: string;
+    line2?: string;
+    company?: string;
+    city: string;
+    state: string;
+    zip: string;
+    phone?: string;
+    address_type?: string;
+  } = {
     name: "",
     line1: "",
     city: "",
     state: "",
     zip: "",
-    phone: undefined as string | undefined,
-    address_type: undefined as string | undefined,
   };
 
   const addrMatch = text.match(/Address Type:\s*\n?\s*(\w+)/);

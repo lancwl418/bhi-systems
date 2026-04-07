@@ -11,6 +11,7 @@ import {
   Shield,
   Settings,
   PlugZap,
+  DollarSign,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +22,7 @@ const navigation = [
   { name: "Customers", href: "/customers", icon: Users },
   { name: "Inventory", href: "/inventory", icon: Warehouse },
   { name: "Warranties", href: "/warranties", icon: Shield },
+  { name: "Finance", href: "/finance", icon: DollarSign },
   { name: "Channels", href: "/settings/channels", icon: PlugZap },
   { name: "Settings", href: "/settings", icon: Settings },
 ];

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceSupabase } from "@/lib/supabase/server";
+import { normalizeRetailer } from "@/lib/retailers";
 
 export const maxDuration = 300; // 5 minutes for large CSVs
 
@@ -126,7 +127,7 @@ export async function POST(request: NextRequest) {
     const supabase = await createServiceSupabase();
 
     // Detect retailer from CSV
-    const retailerName = rows[0]["Retailer Name"] || "Unknown";
+    const retailerName = normalizeRetailer(rows[0]["Retailer Name"] || "");
 
     // Get or create buyer
     const { data: existingBuyers } = await supabase

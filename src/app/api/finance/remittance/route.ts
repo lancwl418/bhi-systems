@@ -1,0 +1,210 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createServiceSupabase } from "@/lib/supabase/server";
+import { normalizeRetailer } from "@/lib/retailers";
+import * as XLSX from "xlsx";
+
+export const maxDuration = 120;
+
+function parseCurrency(val: string | number): number {
+  if (typeof val === "number") return val;
+  if (!val) return 0;
+  const cleaned = String(val).replace(/[$,\s]/g, "");
+  return parseFloat(cleaned) || 0;
+}
+
+function parseXLSDate(val: string | number): string | null {
+  if (!val) return null;
+  const s = String(val);
+  // Format: "20260406" → "2026-04-06"
+  if (/^\d{8}$/.test(s)) {
+    return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+  }
+  // Format: "2026-04-03 19:52:36"
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    return s.slice(0, 10);
+  }
+  return null;
+}
+
+// Strip the two leading zeros that Home Depot XLS adds (10-digit → 8-digit PO)
+function normalizePO(po: string): string {
+  if (po.length === 10 && po.startsWith("00")) {
+    return po.slice(2);
+  }
+  return po;
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const formData = await request.formData();
+    const file = formData.get("file") as File | null;
+
+    if (!file) {
+      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    }
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const workbook = XLSX.read(buffer, { type: "buffer" });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet);
+
+    if (rows.length === 0) {
+      return NextResponse.json({ error: "Empty spreadsheet" }, { status: 400 });
+    }
+
+    // Extract header info from first row
+    const first = rows[0];
+    const retailer = normalizeRetailer(first["Merchant"] || "");
+    const paymentDate = parseXLSDate(first["Payment Date"]);
+    const eftNumber = String(first["EFT Number"] || "");
+    const balanceDue = parseCurrency(first["Balance Due"]);
+
+    const supabase = await createServiceSupabase();
+
+    // Check for duplicate upload (same EFT number)
+    if (eftNumber) {
+      const { data: existing } = await supabase
+        .from("remittances")
+        .select("id")
+        .eq("eft_number", eftNumber)
+        .limit(1);
+      if (existing && existing.length > 0) {
+        return NextResponse.json({
+          error: `Remittance with EFT ${eftNumber} already uploaded`,
+        }, { status: 400 });
+      }
+    }
+
+    // Collect all PO numbers from XLS for batch lookup
+    const poNumbers = new Set<string>();
+    rows.forEach((r) => {
+      const po = String(r["Purchase Order Number"] || "").trim();
+      if (po) poNumbers.add(normalizePO(po));
+    });
+
+    // Look up orders by channel_order_id (PO number)
+    const orderMap: Record<string, string> = {}; // normalized PO → order.id
+    if (poNumbers.size > 0) {
+      const poArr = Array.from(poNumbers);
+      for (let i = 0; i < poArr.length; i += 200) {
+        const batch = poArr.slice(i, i + 200);
+        const { data } = await supabase
+          .from("orders")
+          .select("id, channel_order_id")
+          .in("channel_order_id", batch);
+        data?.forEach((o) => {
+          orderMap[o.channel_order_id] = o.id;
+        });
+      }
+    }
+
+    // Parse lines
+    let totalPaid = 0;
+    let totalDeductions = 0;
+    const lines: {
+      line_number: number;
+      order_id: string | null;
+      po_number: string;
+      invoice_number: string;
+      invoice_date: string | null;
+      invoice_amount: number;
+      line_amount: number;
+      discount: number;
+      adjustment_number: string;
+      adjustment_date: string | null;
+      adjustment_reason: string;
+      line_type: string;
+    }[] = [];
+
+    rows.forEach((r) => {
+      const lineNum = parseInt(r["Transaction Line Number"]) || lines.length + 1;
+      const rawPO = String(r["Purchase Order Number"] || "").trim();
+      const po = rawPO ? normalizePO(rawPO) : "";
+      const invoiceNum = String(r["Invoice Number"] || "").trim();
+      const invoiceDate = parseXLSDate(r["Invoice Date"]);
+      const invoiceAmount = parseCurrency(r["Invoice Amount"]);
+      const lineAmount = parseCurrency(r["Line Balance Due"]);
+      const discount = parseCurrency(r["Line Discount"] || r["Invoice Discount"]);
+      const adjNum = String(r["Invoice Adjustment Number"] || "").trim();
+      const adjDate = parseXLSDate(r["Invoice Adjustment Date"]);
+      const adjReason = String(r["Invoice Adjustment Reason Code"] || "").trim();
+
+      let lineType = "payment";
+      if (lineAmount < 0) {
+        lineType = po ? "deduction" : "adjustment";
+        totalDeductions += Math.abs(lineAmount);
+      } else {
+        totalPaid += lineAmount;
+      }
+
+      const orderId = po ? (orderMap[po] || null) : null;
+
+      lines.push({
+        line_number: lineNum,
+        order_id: orderId,
+        po_number: po,
+        invoice_number: invoiceNum,
+        invoice_date: invoiceDate,
+        invoice_amount: invoiceAmount,
+        line_amount: lineAmount,
+        discount,
+        adjustment_number: adjNum,
+        adjustment_date: adjDate,
+        adjustment_reason: adjReason,
+        line_type: lineType,
+      });
+    });
+
+    // Insert remittance
+    const { data: remittance, error: remErr } = await supabase
+      .from("remittances")
+      .insert({
+        retailer,
+        payment_date: paymentDate,
+        eft_number: eftNumber,
+        balance_due: balanceDue,
+        total_paid: totalPaid,
+        total_deductions: totalDeductions,
+        file_name: file.name,
+      })
+      .select("id")
+      .single();
+
+    if (remErr) throw remErr;
+
+    // Insert lines in batches
+    const lineRows = lines.map((l) => ({
+      remittance_id: remittance.id,
+      ...l,
+    }));
+
+    for (let i = 0; i < lineRows.length; i += 200) {
+      const batch = lineRows.slice(i, i + 200);
+      const { error: lineErr } = await supabase.from("remittance_lines").insert(batch);
+      if (lineErr) throw lineErr;
+    }
+
+    // Stats
+    const matched = lines.filter((l) => l.order_id).length;
+    const unmatched = lines.filter((l) => l.po_number && !l.order_id).length;
+    const noPO = lines.filter((l) => !l.po_number).length;
+
+    return NextResponse.json({
+      ok: true,
+      remittance_id: remittance.id,
+      retailer,
+      payment_date: paymentDate,
+      eft_number: eftNumber,
+      balance_due: balanceDue,
+      total_paid: totalPaid,
+      total_deductions: totalDeductions,
+      lines: lines.length,
+      matched,
+      unmatched,
+      no_po: noPO,
+    });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}

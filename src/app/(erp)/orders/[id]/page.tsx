@@ -50,7 +50,30 @@ async function getOrder(id: string) {
     .eq("order_id", id)
     .order("created_at", { ascending: false });
 
-  return { ...order, items: items ?? [], shipments: shipments ?? [] };
+  const { data: payments } = await supabase
+    .from("remittance_lines")
+    .select("*, remittances(retailer, payment_date, eft_number, file_name)")
+    .eq("order_id", id)
+    .order("created_at");
+
+  // Payment summary
+  let totalPaid = 0;
+  let totalDeducted = 0;
+  (payments ?? []).forEach((p: any) => {
+    const amt = parseFloat(p.line_amount) || 0;
+    if (amt >= 0) totalPaid += amt;
+    else totalDeducted += Math.abs(amt);
+  });
+
+  return {
+    ...order,
+    items: items ?? [],
+    shipments: shipments ?? [],
+    payments: payments ?? [],
+    totalPaid,
+    totalDeducted,
+    netPayment: totalPaid - totalDeducted,
+  };
 }
 
 export default async function OrderDetailPage({ params }: Props) {
@@ -250,6 +273,68 @@ export default async function OrderDetailPage({ params }: Props) {
                     <TableCell>{s.delivered_date ?? "—"}</TableCell>
                   </TableRow>
                 ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Payment / Remittance */}
+      {order.payments.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium flex items-center justify-between">
+              <span>Payment Records ({order.payments.length})</span>
+              <span className="text-sm font-mono">
+                Net: <span className={order.netPayment >= 0 ? "text-green-600" : "text-red-600"}>
+                  ${order.netPayment.toFixed(2)}
+                </span>
+                {" "}/ Order Total: ${order.total?.toFixed(2)}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Type</TableHead>
+                  <TableHead>EFT / File</TableHead>
+                  <TableHead>Payment Date</TableHead>
+                  <TableHead>Invoice #</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead className="text-right">Discount</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {order.payments.map((p: any) => {
+                  const amt = parseFloat(p.line_amount);
+                  return (
+                    <TableRow key={p.id}>
+                      <TableCell>
+                        <Badge variant="secondary" className={
+                          p.line_type === "payment" ? "bg-green-100 text-green-800" :
+                          p.line_type === "deduction" ? "bg-red-100 text-red-800" :
+                          "bg-orange-100 text-orange-800"
+                        }>
+                          {p.line_type}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        <Link href={`/finance/${p.remittance_id}`} className="hover:underline text-blue-600">
+                          {p.remittances?.eft_number || p.remittances?.file_name}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="text-sm">{p.remittances?.payment_date || "—"}</TableCell>
+                      <TableCell className="font-mono text-sm">{p.invoice_number || p.adjustment_number || "—"}</TableCell>
+                      <TableCell className={`text-right font-mono text-sm font-medium ${amt < 0 ? "text-red-600" : "text-green-600"}`}>
+                        ${amt.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm text-muted-foreground">
+                        {parseFloat(p.discount) > 0 ? `-$${parseFloat(p.discount).toFixed(2)}` : "—"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>

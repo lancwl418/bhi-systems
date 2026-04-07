@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Import lib directly to avoid pdf-parse's test file auto-execution
+    // @ts-ignore
     const pdfParse = (await import("pdf-parse/lib/pdf-parse.js")).default;
 
     const supabase = await createServiceSupabase();
@@ -167,8 +168,8 @@ export async function POST(request: NextRequest) {
           customer_phone: order.ship_to.phone,
           address_type: order.ship_to.address_type,
         };
-        if (order.ship_to.company) {
-          rawPayload.company = order.ship_to.company;
+        if ((order.ship_to as any).company) {
+          rawPayload.company = (order.ship_to as any).company;
         }
 
         if (existingOrderId) {
