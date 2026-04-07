@@ -112,23 +112,27 @@ async function getMonthData(month: string) {
 
     const oLines = linesByOrderId[o.id] || [];
     for (const l of oLines) {
+      const inv = parseFloat(l.invoice_amount) || 0;
+      const disc = parseFloat(l.discount) || 0;
       const amt = parseFloat(l.line_amount) || 0;
-      if (amt >= 0) { invoiceTotal += amt; ch.invoiceTotal += amt; }
-      else { deductions += Math.abs(amt); ch.deductions += Math.abs(amt); }
-      netReceived += amt;
-      ch.netReceived += amt;
+      invoiceTotal += inv; ch.invoiceTotal += inv;
+      deductions += disc; ch.deductions += disc;
+      if (amt < 0) { deductions += Math.abs(amt); ch.deductions += Math.abs(amt); }
+      netReceived += amt; ch.netReceived += amt;
     }
   }
 
   // Add unmatched/noPO amounts
   for (const l of [...unmatchedLines, ...noPOLines]) {
+    const inv = parseFloat(l.invoice_amount) || 0;
+    const disc = parseFloat(l.discount) || 0;
     const amt = parseFloat(l.line_amount) || 0;
     const retailer = normalizeRetailer(l.remittances?.retailer || "");
     const ch = ensureCh(retailer);
-    if (amt >= 0) { invoiceTotal += amt; ch.invoiceTotal += amt; }
-    else { deductions += Math.abs(amt); ch.deductions += Math.abs(amt); }
-    netReceived += amt;
-    ch.netReceived += amt;
+    invoiceTotal += inv; ch.invoiceTotal += inv;
+    deductions += disc; ch.deductions += disc;
+    if (amt < 0) { deductions += Math.abs(amt); ch.deductions += Math.abs(amt); }
+    netReceived += amt; ch.netReceived += amt;
   }
 
   const outstanding = Math.max(0, orderTotal - netReceived);
