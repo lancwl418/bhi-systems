@@ -11,6 +11,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { createServiceSupabase } from "@/lib/supabase/server";
+import { ImportWarrantyRecordsCSV } from "./import-csv";
 
 const statusColors: Record<string, string> = {
   open: "bg-yellow-100 text-yellow-800",
@@ -20,15 +21,19 @@ const statusColors: Record<string, string> = {
   resolved: "bg-gray-100 text-gray-800",
 };
 
+const fulfillmentColors: Record<string, string> = {
+  fulfilled: "bg-green-100 text-green-800",
+  unfulfilled: "bg-yellow-100 text-yellow-800",
+  pending: "bg-gray-100 text-gray-800",
+};
+
 async function getWarrantyRecords() {
   const supabase = await createServiceSupabase();
 
   const { data, error } = await supabase
     .from("warranties")
-    .select(
-      "*, warranty_registrations(customer_name, customer_email)"
-    )
-    .order("created_at", { ascending: false });
+    .select("*, warranty_parts(*)")
+    .order("order_date", { ascending: false });
 
   if (error) {
     console.error("Failed to load warranty records:", error);
@@ -49,6 +54,7 @@ export default async function WarrantyRecordsPage() {
             {records.length} records total
           </p>
         </div>
+        <ImportWarrantyRecordsCSV />
       </div>
 
       <Card>
@@ -56,44 +62,73 @@ export default async function WarrantyRecordsPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>No.</TableHead>
                 <TableHead>Customer</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Description</TableHead>
+                <TableHead>Parts</TableHead>
+                <TableHead>Notes</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Resolution</TableHead>
-                <TableHead>Created</TableHead>
+                <TableHead>Fulfillment</TableHead>
+                <TableHead>Date</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {records.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={6}
+                    colSpan={7}
                     className="text-center text-muted-foreground py-12"
                   >
-                    No warranty records yet.
+                    No warranty records yet. Import a CSV to get started.
                   </TableCell>
                 </TableRow>
               ) : (
                 records.map((r: any) => (
                   <TableRow key={r.id}>
+                    <TableCell className="text-sm font-mono font-medium">
+                      {r.warranty_number || "—"}
+                    </TableCell>
                     <TableCell>
                       <div>
                         <p className="text-sm font-medium">
-                          {r.warranty_registrations?.customer_name || "—"}
+                          {r.customer_name || "—"}
                         </p>
-                        {r.warranty_registrations?.customer_email && (
+                        {r.customer_email && (
                           <p className="text-xs text-muted-foreground">
-                            {r.warranty_registrations.customer_email}
+                            {r.customer_email}
+                          </p>
+                        )}
+                        {r.customer_phone && (
+                          <p className="text-xs text-muted-foreground">
+                            {r.customer_phone}
                           </p>
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm">
-                      {r.claim_type || "—"}
+                    <TableCell>
+                      <div className="space-y-1">
+                        {(r.warranty_parts || []).map((p: any, i: number) => (
+                          <div key={i} className="text-xs">
+                            <span className="font-medium">{p.part_name}</span>
+                            {p.quantity > 1 && (
+                              <span className="text-muted-foreground">
+                                {" "}
+                                x{p.quantity}
+                              </span>
+                            )}
+                            {p.unit_price > 0 && (
+                              <span className="text-muted-foreground">
+                                {" "}
+                                ${p.unit_price}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </TableCell>
-                    <TableCell className="text-sm max-w-[300px] truncate">
-                      {r.description || "—"}
+                    <TableCell className="text-xs max-w-[300px]">
+                      <p className="line-clamp-3 whitespace-pre-wrap">
+                        {r.notes || "—"}
+                      </p>
                     </TableCell>
                     <TableCell>
                       <Badge
@@ -103,11 +138,22 @@ export default async function WarrantyRecordsPage() {
                         {r.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-sm max-w-[200px] truncate">
-                      {r.resolution || "—"}
+                    <TableCell>
+                      {r.fulfillment_status && (
+                        <Badge
+                          className={
+                            fulfillmentColors[r.fulfillment_status] || ""
+                          }
+                          variant="secondary"
+                        >
+                          {r.fulfillment_status}
+                        </Badge>
+                      )}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {new Date(r.created_at).toLocaleDateString()}
+                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                      {r.order_date
+                        ? new Date(r.order_date).toLocaleDateString()
+                        : "—"}
                     </TableCell>
                   </TableRow>
                 ))

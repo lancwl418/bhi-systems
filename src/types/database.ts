@@ -158,17 +158,40 @@ export interface WarrantyRegistration {
 
 export interface Warranty {
   id: string;
-  order_id: string;
-  customer_id: string;
-  product_id: string;
-  sku_id: string;
+  warranty_number: string | null;
   registration_id: string | null;
+  customer_name: string | null;
+  customer_email: string | null;
+  customer_phone: string | null;
+  shipping_name: string | null;
+  shipping_address: Record<string, string>;
   status: WarrantyStatus;
   claim_type: string;
   description: string;
+  notes: string | null;
   resolution: string | null;
+  fulfillment_status: string | null;
+  financial_status: string | null;
+  subtotal: number;
+  shipping_cost: number;
+  total: number;
+  discount_code: string | null;
+  discount_amount: number;
+  shopify_id: string | null;
+  order_date: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface WarrantyPart {
+  id: string;
+  warranty_id: string;
+  part_name: string;
+  quantity: number;
+  unit_price: number;
+  sku: string | null;
+  fulfillment_status: string | null;
+  created_at: string;
 }
 
 export interface Supplier {
