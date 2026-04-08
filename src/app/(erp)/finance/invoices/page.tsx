@@ -14,6 +14,10 @@ import { createServiceSupabase } from "@/lib/supabase/server";
 import Link from "next/link";
 import { UploadInvoices } from "./upload-invoices";
 
+interface Props {
+  searchParams: Promise<{ month?: string; view?: string }>;
+}
+
 async function fetchAll<T = Record<string, any>>(
   supabase: any, table: string, select: string,
 ): Promise<T[]> {
@@ -34,9 +38,9 @@ interface InvoiceRow {
   po_number: string;
   order_id: string | null;
   invoice_date: string | null;
+  invoice_month: string;
   invoice_amount: number;
   sku_code: string | null;
-  // From remittance data
   payment_amount: number;
   deductions: number;
   net_received: number;
@@ -46,22 +50,18 @@ interface InvoiceRow {
 async function getInvoiceData() {
   const supabase = await createServiceSupabase();
 
-  // Get all invoices from order_invoices table
   const invoices = await fetchAll(supabase, "order_invoices",
     "invoice_number, po_number, order_id, invoice_date, invoice_amount, sku_code"
   );
 
-  // Get payment data from remittance_lines (grouped by invoice_number)
   const remittancePayments = await fetchAll(supabase, "remittance_lines",
     "invoice_number, line_amount, discount"
   );
 
-  // Get deduction data (adjustment_number = invoice_number)
   const remittanceDeductions = await fetchAll(supabase, "remittance_lines",
     "adjustment_number, line_amount"
   );
 
-  // Build payment lookup: invoice_number → { payment, deductions }
   const paymentMap: Record<string, { payment: number; discount: number }> = {};
   for (const l of remittancePayments) {
     if (!l.invoice_number) continue;
@@ -70,7 +70,6 @@ async function getInvoiceData() {
     paymentMap[l.invoice_number].discount += parseFloat(l.discount) || 0;
   }
 
-  // Build deduction lookup: adjustment_number (= invoice_number) → total deductions
   const deductionMap: Record<string, number> = {};
   for (const l of remittanceDeductions) {
     if (!l.adjustment_number) continue;
@@ -81,17 +80,18 @@ async function getInvoiceData() {
     }
   }
 
-  // Combine
   const rows: InvoiceRow[] = invoices.map((inv: any) => {
     const pay = paymentMap[inv.invoice_number];
     const ded = deductionMap[inv.invoice_number] || 0;
     const paymentAmount = pay?.payment || 0;
     const discount = pay?.discount || 0;
+    const dateStr = inv.invoice_date ? String(inv.invoice_date).slice(0, 10) : null;
     return {
       invoice_number: inv.invoice_number,
       po_number: inv.po_number,
       order_id: inv.order_id,
-      invoice_date: inv.invoice_date,
+      invoice_date: dateStr,
+      invoice_month: dateStr ? dateStr.slice(0, 7) : "unknown",
       invoice_amount: parseFloat(inv.invoice_amount) || 0,
       sku_code: inv.sku_code,
       payment_amount: paymentAmount,
@@ -101,7 +101,6 @@ async function getInvoiceData() {
     };
   });
 
-  // Sort by invoice_date desc
   rows.sort((a, b) => {
     if (a.invoice_date && b.invoice_date) return b.invoice_date.localeCompare(a.invoice_date);
     if (a.invoice_date) return -1;
@@ -109,25 +108,50 @@ async function getInvoiceData() {
     return 0;
   });
 
-  // Stats
-  let totalInvoiced = 0, totalReceived = 0, totalDeducted = 0;
-  let paidCount = 0, unpaidCount = 0;
-  for (const r of rows) {
-    totalInvoiced += r.invoice_amount;
-    totalReceived += r.net_received;
-    totalDeducted += r.deductions;
-    if (r.paid) paidCount++; else unpaidCount++;
-  }
+  // Collect months
+  const monthSet = new Set<string>();
+  rows.forEach((r) => { if (r.invoice_month !== "unknown") monthSet.add(r.invoice_month); });
+  const months = [...monthSet].sort((a, b) => b.localeCompare(a));
 
-  return { rows, totalInvoiced, totalReceived, totalDeducted, paidCount, unpaidCount };
+  const unmatchedCount = rows.filter((r) => !r.order_id).length;
+
+  return { rows, months, unmatchedCount };
 }
 
 function fmt(n: number) {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export default async function InvoicesPage() {
+function monthLabel(m: string) {
+  const [y, mo] = m.split("-");
+  const names = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${names[parseInt(mo)]} ${y}`;
+}
+
+export default async function InvoicesPage({ searchParams }: Props) {
+  const params = await searchParams;
   const data = await getInvoiceData();
+  const activeMonth = params.month || "all";
+  const activeView = params.view || "all";
+
+  // Filter rows
+  let filtered = data.rows;
+  if (activeView === "unmatched") {
+    filtered = filtered.filter((r) => !r.order_id);
+  }
+  if (activeMonth !== "all") {
+    filtered = filtered.filter((r) => r.invoice_month === activeMonth);
+  }
+
+  // Stats for filtered
+  let totalInvoiced = 0, totalReceived = 0, totalDeducted = 0;
+  let paidCount = 0, unpaidCount = 0;
+  for (const r of filtered) {
+    totalInvoiced += r.invoice_amount;
+    totalReceived += r.net_received;
+    totalDeducted += r.deductions;
+    if (r.paid) paidCount++; else unpaidCount++;
+  }
 
   return (
     <div className="space-y-6">
@@ -135,20 +159,49 @@ export default async function InvoicesPage() {
         <div>
           <h2 className="text-2xl font-bold">Invoices</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Invoice tracking — {data.rows.length} invoices
+            {filtered.length} invoices {activeMonth !== "all" ? `in ${monthLabel(activeMonth)}` : ""} {activeView === "unmatched" ? "(unmatched only)" : ""}
           </p>
         </div>
         <UploadInvoices />
+      </div>
+
+      {/* View filter */}
+      <div className="flex gap-2 flex-wrap">
+        <Link
+          href="/finance/invoices"
+          className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${activeView === "all" && activeMonth === "all" ? "bg-primary text-primary-foreground border-primary" : "hover:bg-accent"}`}
+        >
+          All ({data.rows.length})
+        </Link>
+        {data.unmatchedCount > 0 && (
+          <Link
+            href="/finance/invoices?view=unmatched"
+            className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${activeView === "unmatched" && activeMonth === "all" ? "bg-primary text-primary-foreground border-primary" : "hover:bg-accent"}`}
+          >
+            Unmatched
+            <Badge variant="destructive" className="ml-2 text-xs px-1.5 py-0">{data.unmatchedCount}</Badge>
+          </Link>
+        )}
+        <div className="w-px bg-border mx-1" />
+        {data.months.map((m) => (
+          <Link
+            key={m}
+            href={`/finance/invoices?month=${m}${activeView === "unmatched" ? "&view=unmatched" : ""}`}
+            className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${activeMonth === m ? "bg-primary text-primary-foreground border-primary" : "hover:bg-accent"}`}
+          >
+            {monthLabel(m)}
+          </Link>
+        ))}
       </div>
 
       {/* Summary */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Invoices</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Invoices</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{data.rows.length}</p>
+            <p className="text-2xl font-bold">{filtered.length}</p>
           </CardContent>
         </Card>
         <Card>
@@ -156,7 +209,7 @@ export default async function InvoicesPage() {
             <CardTitle className="text-sm font-medium text-muted-foreground">Invoiced Amount</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">${fmt(data.totalInvoiced)}</p>
+            <p className="text-2xl font-bold">${fmt(totalInvoiced)}</p>
           </CardContent>
         </Card>
         <Card>
@@ -164,7 +217,7 @@ export default async function InvoicesPage() {
             <CardTitle className="text-sm font-medium text-muted-foreground">Net Received</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-green-600">${fmt(data.totalReceived)}</p>
+            <p className="text-2xl font-bold text-green-600">${fmt(totalReceived)}</p>
           </CardContent>
         </Card>
         <Card>
@@ -172,7 +225,7 @@ export default async function InvoicesPage() {
             <CardTitle className="text-sm font-medium text-muted-foreground">Paid</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-green-600">{data.paidCount}</p>
+            <p className="text-2xl font-bold text-green-600">{paidCount}</p>
           </CardContent>
         </Card>
         <Card>
@@ -180,7 +233,7 @@ export default async function InvoicesPage() {
             <CardTitle className="text-sm font-medium text-muted-foreground">Unpaid</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-orange-600">{data.unpaidCount}</p>
+            <p className="text-2xl font-bold text-orange-600">{unpaidCount}</p>
           </CardContent>
         </Card>
       </div>
@@ -188,7 +241,10 @@ export default async function InvoicesPage() {
       {/* Invoice Table */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-medium">All Invoices</CardTitle>
+          <CardTitle className="text-sm font-medium">
+            {activeView === "unmatched" ? "Unmatched Invoices" : "Invoices"}
+            {activeMonth !== "all" && ` — ${monthLabel(activeMonth)}`}
+          </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -201,18 +257,18 @@ export default async function InvoicesPage() {
                 <TableHead className="text-right">Invoice Amount</TableHead>
                 <TableHead className="text-right">Received</TableHead>
                 <TableHead className="text-right">Deductions</TableHead>
-                <TableHead>Payment Status</TableHead>
+                <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.rows.length === 0 ? (
+              {filtered.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center text-muted-foreground py-12">
-                    No invoices yet. Upload an invoice report to get started.
+                    No invoices found.
                   </TableCell>
                 </TableRow>
               ) : (
-                data.rows.map((inv) => (
+                filtered.map((inv) => (
                   <TableRow key={inv.invoice_number}>
                     <TableCell className="font-mono text-sm font-medium">{inv.invoice_number}</TableCell>
                     <TableCell>
@@ -221,11 +277,11 @@ export default async function InvoicesPage() {
                           {inv.po_number}
                         </Link>
                       ) : (
-                        <span className="font-mono text-sm">{inv.po_number || "—"}</span>
+                        <span className="font-mono text-sm text-orange-600">{inv.po_number || "—"}</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{inv.sku_code || "—"}</TableCell>
-                    <TableCell className="text-sm">{inv.invoice_date ? inv.invoice_date.slice(0, 10) : "—"}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{inv.sku_code || "—"}</TableCell>
+                    <TableCell className="text-sm">{inv.invoice_date || "—"}</TableCell>
                     <TableCell className="text-right font-mono text-sm">${fmt(inv.invoice_amount)}</TableCell>
                     <TableCell className={`text-right font-mono text-sm ${inv.net_received > 0 ? "text-green-600" : ""}`}>
                       {inv.net_received !== 0 ? `$${fmt(inv.net_received)}` : "—"}
@@ -234,11 +290,16 @@ export default async function InvoicesPage() {
                       {inv.deductions > 0 ? `-$${fmt(inv.deductions)}` : "—"}
                     </TableCell>
                     <TableCell>
-                      {inv.paid ? (
-                        <Badge variant="secondary" className="bg-green-100 text-green-800 text-xs">Paid</Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-orange-600 border-orange-300 text-xs">Unpaid</Badge>
-                      )}
+                      <div className="flex gap-1">
+                        {!inv.order_id && (
+                          <Badge variant="outline" className="text-orange-600 border-orange-300 text-xs">No Order</Badge>
+                        )}
+                        {inv.paid ? (
+                          <Badge variant="secondary" className="bg-green-100 text-green-800 text-xs">Paid</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-muted-foreground text-xs">Unpaid</Badge>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
