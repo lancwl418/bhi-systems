@@ -319,8 +319,8 @@ export default async function OrderDetailPage({ params }: Props) {
                           {p.line_type}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-sm">
-                        <Link href={`/finance/${p.remittance_id}`} className="hover:underline text-blue-600">
+                      <TableCell className="text-sm max-w-[200px] truncate">
+                        <Link href={`/finance/${p.remittance_id}`} className="hover:underline text-blue-600" title={p.remittances?.eft_number || p.remittances?.file_name}>
                           {p.remittances?.eft_number || p.remittances?.file_name}
                         </Link>
                       </TableCell>
