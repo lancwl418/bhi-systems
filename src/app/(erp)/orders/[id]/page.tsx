@@ -56,6 +56,12 @@ async function getOrder(id: string) {
     .eq("order_id", id)
     .order("created_at");
 
+  const { data: invoices } = await supabase
+    .from("order_invoices")
+    .select("*")
+    .eq("order_id", id)
+    .order("invoice_date");
+
   // Payment summary
   let totalPaid = 0;
   let totalDeducted = 0;
@@ -70,6 +76,7 @@ async function getOrder(id: string) {
     items: items ?? [],
     shipments: shipments ?? [],
     payments: payments ?? [],
+    invoices: invoices ?? [],
     totalPaid,
     totalDeducted,
     netPayment: totalPaid - totalDeducted,
@@ -271,6 +278,42 @@ export default async function OrderDetailPage({ params }: Props) {
                     </TableCell>
                     <TableCell>{s.shipped_date ?? "—"}</TableCell>
                     <TableCell>{s.delivered_date ?? "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Invoices */}
+      {order.invoices.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium flex items-center justify-between">
+              <span>Invoices ({order.invoices.length})</span>
+              <span className="text-sm font-mono">
+                Total: ${order.invoices.reduce((s: number, i: any) => s + (parseFloat(i.invoice_amount) || 0), 0).toFixed(2)}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Invoice #</TableHead>
+                  <TableHead>Invoice Date</TableHead>
+                  <TableHead>SKU</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {order.invoices.map((inv: any) => (
+                  <TableRow key={inv.id}>
+                    <TableCell className="font-mono text-sm font-medium">{inv.invoice_number}</TableCell>
+                    <TableCell className="text-sm">{inv.invoice_date ? String(inv.invoice_date).slice(0, 10) : "—"}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{inv.sku_code || "—"}</TableCell>
+                    <TableCell className="text-right font-mono text-sm">${parseFloat(inv.invoice_amount).toFixed(2)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
