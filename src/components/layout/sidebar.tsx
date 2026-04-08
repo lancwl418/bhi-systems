@@ -15,6 +15,7 @@ import {
   CreditCard,
   FileText,
   BarChart3,
+  RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +38,7 @@ const navigation: NavItem[] = [
     children: [
       { name: "Payments", href: "/finance/payments", icon: CreditCard },
       { name: "Invoices", href: "/finance/invoices", icon: FileText },
+      { name: "Returns", href: "/finance/returns", icon: RotateCcw },
       { name: "Reconciliation", href: "/finance/reconciliation", icon: BarChart3 },
     ],
   },
