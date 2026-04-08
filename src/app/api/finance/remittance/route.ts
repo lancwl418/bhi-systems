@@ -259,6 +259,7 @@ export async function POST(request: NextRequest) {
       const uniqueAdjs = [...new Set(unresolvedAdjs)];
       for (let i = 0; i < uniqueAdjs.length; i += 200) {
         const batch = uniqueAdjs.slice(i, i + 200);
+        // Check remittance_lines
         const { data } = await supabase
           .from("remittance_lines")
           .select("invoice_number, order_id, po_number")
@@ -268,6 +269,19 @@ export async function POST(request: NextRequest) {
             invoiceToOrder[d.invoice_number] = { order_id: d.order_id, po_number: d.po_number };
           }
         });
+        // Check order_invoices table for any still unresolved
+        const stillUnresolved = batch.filter((a) => !invoiceToOrder[a]);
+        if (stillUnresolved.length > 0) {
+          const { data: invData } = await supabase
+            .from("order_invoices")
+            .select("invoice_number, order_id, po_number")
+            .in("invoice_number", stillUnresolved);
+          invData?.forEach((d: any) => {
+            if (d.invoice_number && (d.order_id || d.po_number)) {
+              invoiceToOrder[d.invoice_number] = { order_id: d.order_id, po_number: d.po_number };
+            }
+          });
+        }
       }
     }
 

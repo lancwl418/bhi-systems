@@ -14,6 +14,7 @@ import { createServiceSupabase } from "@/lib/supabase/server";
 import Link from "next/link";
 import { DollarSign, FileSpreadsheet, AlertTriangle } from "lucide-react";
 import { UploadRemittance } from "../upload-remittance";
+import { ResolveAllButton, ResolveSingleButton } from "./resolve-button";
 
 interface Props {
   searchParams: Promise<{ view?: string }>;
@@ -314,12 +315,15 @@ export default async function FinancePage({ searchParams }: Props) {
           {data.noPOLines.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  Standalone Adjustments (No PO)
-                  <Badge variant="outline" className="text-orange-600 border-orange-300">{data.noPOLines.length}</Badge>
+                <CardTitle className="text-sm font-medium flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    Standalone Adjustments (No PO)
+                    <Badge variant="outline" className="text-orange-600 border-orange-300">{data.noPOLines.length}</Badge>
+                  </span>
+                  <ResolveAllButton />
                 </CardTitle>
                 <p className="text-xs text-muted-foreground">
-                  Adjustments without a purchase order — may need manual review
+                  Adjustments without a purchase order — try auto-resolve or find individually
                 </p>
               </CardHeader>
               <CardContent className="p-0">
@@ -332,6 +336,7 @@ export default async function FinancePage({ searchParams }: Props) {
                       <TableHead>Retailer</TableHead>
                       <TableHead>Source File</TableHead>
                       <TableHead className="text-right">Amount</TableHead>
+                      <TableHead></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -350,6 +355,9 @@ export default async function FinancePage({ searchParams }: Props) {
                           </TableCell>
                           <TableCell className={`text-right font-mono text-sm font-medium ${amt < 0 ? "text-red-600" : "text-green-600"}`}>
                             ${amt.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </TableCell>
+                          <TableCell>
+                            {l.adjustment_number && <ResolveSingleButton lineId={l.id} />}
                           </TableCell>
                         </TableRow>
                       );
