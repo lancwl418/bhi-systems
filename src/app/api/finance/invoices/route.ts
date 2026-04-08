@@ -96,10 +96,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No invoice rows found in file" }, { status: 400 });
     }
 
+    // Group by invoice_number — same invoice can have multiple line items (SKUs)
+    const invoiceMap: Record<string, { po: string; invoiceNumber: string; invoiceDate: string | null; invoiceAmount: number; skus: string[] }> = {};
+    for (const r of invoiceRows) {
+      if (!invoiceMap[r.invoiceNumber]) {
+        invoiceMap[r.invoiceNumber] = {
+          po: r.po,
+          invoiceNumber: r.invoiceNumber,
+          invoiceDate: r.invoiceDate,
+          invoiceAmount: r.invoiceAmount,
+          skus: [],
+        };
+      } else {
+        // Same invoice, different line item — use the max amount (Invoice Total is per-invoice, not per-line)
+        // If amounts differ across lines, keep the largest (it's the invoice total repeated)
+        if (r.invoiceAmount > invoiceMap[r.invoiceNumber].invoiceAmount) {
+          invoiceMap[r.invoiceNumber].invoiceAmount = r.invoiceAmount;
+        }
+      }
+      if (r.skuCode) invoiceMap[r.invoiceNumber].skus.push(r.skuCode);
+    }
+    const groupedInvoices = Object.values(invoiceMap);
+
     const supabase = await createServiceSupabase();
 
     // Dedup: check existing invoice_numbers
-    const allInvNums = [...new Set(invoiceRows.map((r) => r.invoiceNumber))];
+    const allInvNums = groupedInvoices.map((r) => r.invoiceNumber);
     const existingInvs = new Set<string>();
     for (let i = 0; i < allInvNums.length; i += 200) {
       const batch = allInvNums.slice(i, i + 200);
@@ -110,8 +132,8 @@ export async function POST(request: NextRequest) {
       data?.forEach((d: any) => existingInvs.add(d.invoice_number));
     }
 
-    const newRows = invoiceRows.filter((r) => !existingInvs.has(r.invoiceNumber));
-    const skipped = invoiceRows.length - newRows.length;
+    const newRows = groupedInvoices.filter((r) => !existingInvs.has(r.invoiceNumber));
+    const skipped = groupedInvoices.length - newRows.length;
 
     if (newRows.length === 0) {
       return NextResponse.json({
@@ -143,7 +165,7 @@ export async function POST(request: NextRequest) {
       invoice_number: r.invoiceNumber,
       invoice_date: r.invoiceDate,
       invoice_amount: r.invoiceAmount,
-      sku_code: r.skuCode,
+      sku_code: r.skus.join(", "),
     }));
 
     for (let i = 0; i < insertRows.length; i += 200) {
@@ -155,7 +177,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      total: invoiceRows.length,
+      total_lines: invoiceRows.length,
+      unique_invoices: groupedInvoices.length,
       inserted,
       skipped,
       matched: insertRows.filter((r) => r.order_id).length,
