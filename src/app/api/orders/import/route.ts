@@ -157,18 +157,18 @@ export async function POST(request: NextRequest) {
     const skuMap: Record<string, { id: string; product_id: string }> = {};
     existingSkus?.forEach((s) => (skuMap[s.sku_code] = { id: s.id, product_id: s.product_id }));
 
-    // Get ALL existing orders (paginate to avoid 1000-row limit)
-    const existingPOs = new Set<string>();
+    // Get ALL existing orders with status (paginate to avoid 1000-row limit)
+    const existingOrderMap = new Map<string, { id: string; status: string }>();
     let from = 0;
     const PAGE = 1000;
     while (true) {
       const { data: batch } = await supabase
         .from("orders")
-        .select("channel_order_id")
+        .select("id, channel_order_id, status")
         .eq("channel_source", "commercehub")
         .range(from, from + PAGE - 1);
       if (!batch || batch.length === 0) break;
-      batch.forEach((o) => existingPOs.add(o.channel_order_id));
+      batch.forEach((o) => existingOrderMap.set(o.channel_order_id, { id: o.id, status: o.status }));
       if (batch.length < PAGE) break;
       from += PAGE;
     }
@@ -274,9 +274,11 @@ export async function POST(request: NextRequest) {
       ordersByPO[po].lines.push(r);
     });
 
-    // Filter to new orders only
-    const newOrders = Object.values(ordersByPO).filter((o) => !existingPOs.has(o.po));
-    const skipped = Object.keys(ordersByPO).length - newOrders.length;
+    // Split into new orders vs existing that may need status update
+    const allGrouped = Object.values(ordersByPO);
+    const newOrders = allGrouped.filter((o) => !existingOrderMap.has(o.po));
+    const duplicateOrders = allGrouped.filter((o) => existingOrderMap.has(o.po));
+    const skipped = duplicateOrders.length;
 
     let inserted = 0;
     let errors = 0;
@@ -355,6 +357,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Update status for existing orders if changed
+    let statusUpdated = 0;
+    for (const order of duplicateOrders) {
+      const existing = existingOrderMap.get(order.po)!;
+      const newStatus = mapStatus(order.orderStatus);
+      if (existing.status !== newStatus) {
+        const { error: upErr } = await supabase
+          .from("orders")
+          .update({ status: newStatus, updated_at: new Date().toISOString() })
+          .eq("id", existing.id);
+        if (!upErr) statusUpdated++;
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       retailer: retailerName,
@@ -364,6 +380,7 @@ export async function POST(request: NextRequest) {
       newSkus,
       inserted,
       skipped,
+      statusUpdated,
       errors,
       errorMessages,
     });

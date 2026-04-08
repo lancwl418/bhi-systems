@@ -13,6 +13,7 @@ interface ImportResult {
   newSkus: number;
   inserted: number;
   skipped: number;
+  statusUpdated: number;
   errors: number;
   errorMessages: string[];
   error?: string;
@@ -103,6 +104,7 @@ export function ImportCSV() {
             <p className="text-green-700 mt-1">
               {result.inserted.toLocaleString()} orders imported,{" "}
               {result.skipped.toLocaleString()} skipped (duplicates)
+              {result.statusUpdated > 0 && `, ${result.statusUpdated} status updated`}
               {result.newProducts > 0 && `, ${result.newProducts} new products`}
               {result.errors > 0 && `, ${result.errors} errors`}
             </p>
