@@ -8,11 +8,21 @@ import { DollarSign, CreditCard, FileText, BarChart3, AlertTriangle } from "luci
 async function getDashboardData() {
   const supabase = await createServiceSupabase();
 
-  // Remittance totals
-  const { data: remittances } = await supabase.from("remittances").select("total_paid, total_deductions, balance_due");
-  let invoiceTotal = 0, totalDeductions = 0, totalReceived = 0;
+  // Invoice total from order_invoices
+  let invoiceTotal = 0;
+  let invFrom = 0;
+  while (true) {
+    const { data } = await supabase.from("order_invoices").select("invoice_amount").range(invFrom, invFrom + 999);
+    if (!data || data.length === 0) break;
+    data.forEach((d: any) => { invoiceTotal += parseFloat(d.invoice_amount) || 0; });
+    if (data.length < 1000) break;
+    invFrom += 1000;
+  }
+
+  // Remittance totals (deductions + received)
+  const { data: remittances } = await supabase.from("remittances").select("total_deductions, balance_due");
+  let totalDeductions = 0, totalReceived = 0;
   (remittances ?? []).forEach((r: any) => {
-    invoiceTotal += parseFloat(r.total_paid) || 0;
     totalDeductions += parseFloat(r.total_deductions) || 0;
     totalReceived += parseFloat(r.balance_due) || 0;
   });
