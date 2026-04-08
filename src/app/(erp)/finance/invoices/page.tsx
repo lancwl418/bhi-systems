@@ -172,7 +172,7 @@ export default async function InvoicesPage({ searchParams }: Props) {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <InvoiceSearch />
+          <InvoiceSearch defaultValue={searchQuery} />
           <UploadInvoices />
         </div>
       </div>
