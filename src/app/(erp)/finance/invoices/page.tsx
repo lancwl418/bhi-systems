@@ -14,8 +14,10 @@ import { createServiceSupabase } from "@/lib/supabase/server";
 import Link from "next/link";
 import { UploadInvoices } from "./upload-invoices";
 
+import { InvoiceSearch } from "./search-input";
+
 interface Props {
-  searchParams: Promise<{ month?: string; view?: string }>;
+  searchParams: Promise<{ month?: string; view?: string; q?: string }>;
 }
 
 async function fetchAll<T = Record<string, any>>(
@@ -133,9 +135,16 @@ export default async function InvoicesPage({ searchParams }: Props) {
   const data = await getInvoiceData();
   const activeMonth = params.month || "all";
   const activeView = params.view || "all";
+  const searchQuery = (params.q || "").toLowerCase();
 
   // Filter rows
   let filtered = data.rows;
+  if (searchQuery) {
+    filtered = filtered.filter((r) =>
+      r.invoice_number.toLowerCase().includes(searchQuery) ||
+      r.po_number.toLowerCase().includes(searchQuery)
+    );
+  }
   if (activeView === "unmatched") {
     filtered = filtered.filter((r) => !r.order_id);
   }
@@ -162,7 +171,10 @@ export default async function InvoicesPage({ searchParams }: Props) {
             {filtered.length} invoices {activeMonth !== "all" ? `in ${monthLabel(activeMonth)}` : ""} {activeView === "unmatched" ? "(unmatched only)" : ""}
           </p>
         </div>
-        <UploadInvoices />
+        <div className="flex items-center gap-3">
+          <InvoiceSearch />
+          <UploadInvoices />
+        </div>
       </div>
 
       {/* View filter */}
