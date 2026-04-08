@@ -12,6 +12,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { createServiceSupabase } from "@/lib/supabase/server";
 import { ImportWarrantyRecordsCSV } from "./import-csv";
+import Link from "next/link";
 
 const statusColors: Record<string, string> = {
   open: "bg-yellow-100 text-yellow-800",
@@ -83,9 +84,11 @@ export default async function WarrantyRecordsPage() {
                 </TableRow>
               ) : (
                 records.map((r: any) => (
-                  <TableRow key={r.id}>
+                  <TableRow key={r.id} className="cursor-pointer hover:bg-muted/50">
                     <TableCell className="text-sm font-mono font-medium">
-                      {r.warranty_number || "—"}
+                      <Link href={`/warranties/records/${r.id}`} className="hover:underline">
+                        {r.warranty_number || "—"}
+                      </Link>
                     </TableCell>
                     <TableCell>
                       <div>

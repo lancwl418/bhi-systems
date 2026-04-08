@@ -194,6 +194,14 @@ export interface WarrantyPart {
   created_at: string;
 }
 
+export interface WarrantyComment {
+  id: string;
+  warranty_id: string;
+  author: string;
+  content: string;
+  created_at: string;
+}
+
 export interface Supplier {
   id: string;
   name: string;
