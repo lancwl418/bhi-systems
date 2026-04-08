@@ -211,7 +211,6 @@ export async function POST(request: NextRequest) {
       const invoiceAmount = parseCurrency(r["Invoice Amount"]);
       const lineAmount = parseCurrency(r["Line Balance Due"]);
       const discount = parseCurrency(r["Line Discount"] || r["Invoice Discount"]);
-      const adjNum = String(r["Invoice Adjustment Number"] || "").trim();
       const adjDate = parseDate(r["Invoice Adjustment Date"]);
       const adjReason = String(r["Invoice Adjustment Reason Code"] || "").trim();
 
@@ -251,6 +250,48 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // Link deductions to orders via adjustment_number → invoice_number chain
+    // Step 1: Build invoice_number → { order_id, po_number } from payment lines in this file
+    const invoiceToOrder: Record<string, { order_id: string | null; po_number: string }> = {};
+    for (const l of lines) {
+      if (l.invoice_number && (l.order_id || l.po_number)) {
+        invoiceToOrder[l.invoice_number] = { order_id: l.order_id, po_number: l.po_number };
+      }
+    }
+
+    // Step 2: Check DB for any adjustment_numbers not resolved from this file
+    const unresolvedAdjs = lines
+      .filter((l) => l.adjustment_number && !l.order_id && !invoiceToOrder[l.adjustment_number])
+      .map((l) => l.adjustment_number);
+    if (unresolvedAdjs.length > 0) {
+      const uniqueAdjs = [...new Set(unresolvedAdjs)];
+      for (let i = 0; i < uniqueAdjs.length; i += 200) {
+        const batch = uniqueAdjs.slice(i, i + 200);
+        const { data } = await supabase
+          .from("remittance_lines")
+          .select("invoice_number, order_id, po_number")
+          .in("invoice_number", batch);
+        data?.forEach((d: any) => {
+          if (d.invoice_number && (d.order_id || d.po_number)) {
+            invoiceToOrder[d.invoice_number] = { order_id: d.order_id, po_number: d.po_number };
+          }
+        });
+      }
+    }
+
+    // Step 3: Apply — link deduction lines to orders
+    let linkedCount = 0;
+    for (const l of lines) {
+      if (l.adjustment_number && !l.order_id) {
+        const match = invoiceToOrder[l.adjustment_number];
+        if (match) {
+          l.order_id = match.order_id;
+          if (!l.po_number) l.po_number = match.po_number;
+          linkedCount++;
+        }
+      }
+    }
+
     // Group lines by EFT number — one remittance per EFT
     const linesByEft = new Map<string, typeof lines>();
     for (const l of lines) {
@@ -261,36 +302,57 @@ export async function POST(request: NextRequest) {
 
     const remittanceIds: string[] = [];
 
+    // Check which EFTs already have a remittance record
+    const existingRemittances: Record<string, string> = {};
+    for (let i = 0; i < eftArr.length; i += 200) {
+      const batch = eftArr.slice(i, i + 200);
+      const { data } = await supabase
+        .from("remittances")
+        .select("id, eft_number")
+        .in("eft_number", batch);
+      data?.forEach((d: any) => { existingRemittances[d.eft_number] = d.id; });
+    }
+
     for (const [eft, eftLines] of linesByEft) {
-      const paymentDate = eftLines.find((l) => l.payment_date)?.payment_date || null;
-      let eftInvoiced = 0, eftDiscount = 0, eftNet = 0;
-      for (const l of eftLines) {
-        eftInvoiced += l.invoice_amount;
-        eftDiscount += l.discount;
-        if (l.line_amount < 0) eftDiscount += Math.abs(l.line_amount);
-        eftNet += l.line_amount;
+      let remittanceId: string;
+
+      if (eft !== "_no_eft" && existingRemittances[eft]) {
+        // Add lines to existing remittance
+        remittanceId = existingRemittances[eft];
+      } else {
+        // Create new remittance for this EFT
+        const paymentDate = eftLines.find((l) => l.payment_date)?.payment_date || null;
+        let eftInvoiced = 0, eftDiscount = 0, eftNet = 0;
+        for (const l of eftLines) {
+          eftInvoiced += l.invoice_amount;
+          eftDiscount += l.discount;
+          if (l.line_amount < 0) eftDiscount += Math.abs(l.line_amount);
+          eftNet += l.line_amount;
+        }
+
+        const { data: remittance, error: remErr } = await supabase
+          .from("remittances")
+          .insert({
+            retailer,
+            payment_date: paymentDate,
+            eft_number: eft === "_no_eft" ? null : eft,
+            balance_due: eftNet,
+            total_paid: eftInvoiced,
+            total_deductions: eftDiscount,
+            file_name: file.name,
+          })
+          .select("id")
+          .single();
+
+        if (remErr) throw remErr;
+        remittanceId = remittance.id;
       }
 
-      const { data: remittance, error: remErr } = await supabase
-        .from("remittances")
-        .insert({
-          retailer,
-          payment_date: paymentDate,
-          eft_number: eft === "_no_eft" ? null : eft,
-          balance_due: eftNet,
-          total_paid: eftInvoiced,
-          total_deductions: eftDiscount,
-          file_name: file.name,
-        })
-        .select("id")
-        .single();
-
-      if (remErr) throw remErr;
-      remittanceIds.push(remittance.id);
+      remittanceIds.push(remittanceId);
 
       // Insert lines in batches
       const lineRows = eftLines.map((l) => ({
-        remittance_id: remittance.id,
+        remittance_id: remittanceId,
         ...l,
       }));
 
@@ -304,7 +366,7 @@ export async function POST(request: NextRequest) {
     // Stats
     const matched = lines.filter((l) => l.order_id).length;
     const unmatched = lines.filter((l) => l.po_number && !l.order_id).length;
-    const noPO = lines.filter((l) => !l.po_number).length;
+    const noPO = lines.filter((l) => !l.po_number && !l.order_id).length;
 
     return NextResponse.json({
       ok: true,
@@ -318,6 +380,7 @@ export async function POST(request: NextRequest) {
       matched,
       unmatched,
       no_po: noPO,
+      deductions_linked: linkedCount,
       duplicates_skipped: duplicateCount,
     });
   } catch (err: any) {
