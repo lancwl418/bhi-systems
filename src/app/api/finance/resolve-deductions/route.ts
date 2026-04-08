@@ -114,10 +114,48 @@ export async function POST(request: NextRequest) {
       resolved++;
     }
 
+    // Second pass: resolve lines that have invoice_number but no order_id
+    // (e.g. PO is N/A but invoice_number exists — look up via order_invoices)
+    let invoiceResolved = 0;
+    const { data: invoiceUnlinked } = await supabase
+      .from("remittance_lines")
+      .select("id, invoice_number")
+      .is("order_id", null)
+      .not("invoice_number", "eq", "");
+
+    if (invoiceUnlinked && invoiceUnlinked.length > 0) {
+      const invNums = [...new Set(invoiceUnlinked.map((l: any) => l.invoice_number))];
+      const invToOrder: Record<string, { order_id: string; po_number: string }> = {};
+
+      for (let i = 0; i < invNums.length; i += 200) {
+        const batch = invNums.slice(i, i + 200);
+        const { data } = await supabase
+          .from("order_invoices")
+          .select("invoice_number, order_id, po_number")
+          .in("invoice_number", batch)
+          .not("order_id", "is", null);
+        data?.forEach((d: any) => {
+          invToOrder[d.invoice_number] = { order_id: d.order_id, po_number: d.po_number };
+        });
+      }
+
+      for (const row of invoiceUnlinked) {
+        const match = invToOrder[row.invoice_number];
+        if (match) {
+          await supabase
+            .from("remittance_lines")
+            .update({ order_id: match.order_id, po_number: match.po_number })
+            .eq("id", row.id);
+          invoiceResolved++;
+        }
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       checked: unlinked.length,
       resolved,
+      invoice_resolved: invoiceResolved,
       still_unresolved: unlinked.length - resolved,
     });
   } catch (err: any) {
