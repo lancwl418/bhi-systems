@@ -135,12 +135,34 @@ export interface Shipment {
   created_at: string;
 }
 
+export interface WarrantyRegistration {
+  id: string;
+  customer_name: string;
+  customer_email: string | null;
+  indoor_model: string | null;
+  indoor_serial: string | null;
+  outdoor_model: string | null;
+  outdoor_serial: string | null;
+  purchase_date: string | null;
+  purchase_from: string | null;
+  order_number: string | null;
+  contractor_name: string | null;
+  contractor_phone: string | null;
+  contractor_email: string | null;
+  license_type: string | null;
+  license_no: string | null;
+  submitted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Warranty {
   id: string;
   order_id: string;
   customer_id: string;
   product_id: string;
   sku_id: string;
+  registration_id: string | null;
   status: WarrantyStatus;
   claim_type: string;
   description: string;

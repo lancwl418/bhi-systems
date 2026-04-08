@@ -16,6 +16,8 @@ import {
   FileText,
   BarChart3,
   RotateCcw,
+  ClipboardList,
+  FileBadge,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -32,7 +34,13 @@ export const navigation: NavItem[] = [
   { name: "Products", href: "/products", icon: Package },
   { name: "Customers", href: "/customers", icon: Users },
   { name: "Inventory", href: "/inventory", icon: Warehouse },
-  { name: "Warranties", href: "/warranties", icon: Shield },
+  {
+    name: "Warranties", href: "/warranties", icon: Shield,
+    children: [
+      { name: "Registration", href: "/warranties/registration", icon: FileBadge },
+      { name: "Records", href: "/warranties/records", icon: ClipboardList },
+    ],
+  },
   {
     name: "Finance", href: "/finance", icon: DollarSign,
     children: [
