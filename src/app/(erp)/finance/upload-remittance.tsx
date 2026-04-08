@@ -73,7 +73,7 @@ export function UploadRemittance() {
           <CheckCircle className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
           <div>
             <p className="font-medium text-green-800">
-              {result.retailer} — EFT {result.eft_number}
+              {result.retailer} — {result.remittance_count} EFT record{result.remittance_count > 1 ? "s" : ""}
             </p>
             <p className="text-green-700 mt-1">
               {result.lines} lines: {result.matched} matched, {result.unmatched} unmatched, {result.no_po} no PO

@@ -120,28 +120,25 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createServiceSupabase();
 
-    // Collect all EFT+invoice pairs from file for duplicate check
-    const eftInvoicePairs: { eft: string; invoice: string }[] = [];
+    // Build dedup set: eft+invoice_number (payments) and eft+adjustment_number (deductions)
+    const fileEfts = new Set<string>();
     for (const r of rows) {
       const eft = String(r["EFT Number"] || "").trim();
-      const invoice = String(r["Invoice Number"] || "").trim();
-      if (eft && invoice) eftInvoicePairs.push({ eft, invoice });
+      if (eft) fileEfts.add(eft);
     }
 
-    // Batch-check existing (eft_number, invoice_number) in DB
-    const existingSet = new Set<string>();
-    if (eftInvoicePairs.length > 0) {
-      const uniqueEfts = [...new Set(eftInvoicePairs.map((p) => p.eft))];
-      for (let i = 0; i < uniqueEfts.length; i += 200) {
-        const batch = uniqueEfts.slice(i, i + 200);
-        const { data } = await supabase
-          .from("remittance_lines")
-          .select("eft_number, invoice_number")
-          .in("eft_number", batch);
-        data?.forEach((d: any) => {
-          existingSet.add(`${d.eft_number}::${d.invoice_number}`);
-        });
-      }
+    const existingKeys = new Set<string>();
+    const eftArr = [...fileEfts];
+    for (let i = 0; i < eftArr.length; i += 200) {
+      const batch = eftArr.slice(i, i + 200);
+      const { data } = await supabase
+        .from("remittance_lines")
+        .select("eft_number, invoice_number, adjustment_number")
+        .in("eft_number", batch);
+      data?.forEach((d: any) => {
+        if (d.invoice_number) existingKeys.add(`${d.eft_number}::inv::${d.invoice_number}`);
+        if (d.adjustment_number) existingKeys.add(`${d.eft_number}::adj::${d.adjustment_number}`);
+      });
     }
 
     // Collect all PO numbers for batch lookup
@@ -193,14 +190,20 @@ export async function POST(request: NextRequest) {
     rows.forEach((r) => {
       const eft = String(r["EFT Number"] || "").trim();
       const invoiceNum = String(r["Invoice Number"] || "").trim();
+      const adjNum = String(r["Invoice Adjustment Number"] || "").trim();
 
-      // Skip duplicates (same EFT + invoice already in DB)
-      if (eft && invoiceNum && existingSet.has(`${eft}::${invoiceNum}`)) {
+      // Dedup: payment by eft+invoice_number, deduction by eft+adjustment_number
+      if (eft && invoiceNum && existingKeys.has(`${eft}::inv::${invoiceNum}`)) {
+        duplicateCount++;
+        return;
+      }
+      if (eft && adjNum && !invoiceNum && existingKeys.has(`${eft}::adj::${adjNum}`)) {
         duplicateCount++;
         return;
       }
 
       const lineNum = parseInt(r["Transaction Line Number"]) || lines.length + 1;
+
       const paymentDate = parseDate(r["Payment Date"]);
       const rawPO = String(r["Purchase Order Number"] || r["PO Number"] || "").trim();
       const po = rawPO ? normalizePO(rawPO) : "";
@@ -248,37 +251,54 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Collect unique EFTs for remittance-level display
-    const uniqueEfts = [...new Set(lines.map((l) => l.eft_number).filter(Boolean))];
-    const firstPaymentDate = lines.find((l) => l.payment_date)?.payment_date || null;
+    // Group lines by EFT number — one remittance per EFT
+    const linesByEft = new Map<string, typeof lines>();
+    for (const l of lines) {
+      const eft = l.eft_number || "_no_eft";
+      if (!linesByEft.has(eft)) linesByEft.set(eft, []);
+      linesByEft.get(eft)!.push(l);
+    }
 
-    // Insert remittance
-    const { data: remittance, error: remErr } = await supabase
-      .from("remittances")
-      .insert({
-        retailer,
-        payment_date: firstPaymentDate,
-        eft_number: uniqueEfts.join(", "),
-        balance_due: totalNet,
-        total_paid: totalInvoiced,
-        total_deductions: totalDiscount,
-        file_name: file.name,
-      })
-      .select("id")
-      .single();
+    const remittanceIds: string[] = [];
 
-    if (remErr) throw remErr;
+    for (const [eft, eftLines] of linesByEft) {
+      const paymentDate = eftLines.find((l) => l.payment_date)?.payment_date || null;
+      let eftInvoiced = 0, eftDiscount = 0, eftNet = 0;
+      for (const l of eftLines) {
+        eftInvoiced += l.invoice_amount;
+        eftDiscount += l.discount;
+        if (l.line_amount < 0) eftDiscount += Math.abs(l.line_amount);
+        eftNet += l.line_amount;
+      }
 
-    // Insert lines in batches
-    const lineRows = lines.map((l) => ({
-      remittance_id: remittance.id,
-      ...l,
-    }));
+      const { data: remittance, error: remErr } = await supabase
+        .from("remittances")
+        .insert({
+          retailer,
+          payment_date: paymentDate,
+          eft_number: eft === "_no_eft" ? null : eft,
+          balance_due: eftNet,
+          total_paid: eftInvoiced,
+          total_deductions: eftDiscount,
+          file_name: file.name,
+        })
+        .select("id")
+        .single();
 
-    for (let i = 0; i < lineRows.length; i += 200) {
-      const batch = lineRows.slice(i, i + 200);
-      const { error: lineErr } = await supabase.from("remittance_lines").insert(batch);
-      if (lineErr) throw lineErr;
+      if (remErr) throw remErr;
+      remittanceIds.push(remittance.id);
+
+      // Insert lines in batches
+      const lineRows = eftLines.map((l) => ({
+        remittance_id: remittance.id,
+        ...l,
+      }));
+
+      for (let i = 0; i < lineRows.length; i += 200) {
+        const batch = lineRows.slice(i, i + 200);
+        const { error: lineErr } = await supabase.from("remittance_lines").insert(batch);
+        if (lineErr) throw lineErr;
+      }
     }
 
     // Stats
@@ -288,10 +308,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      remittance_id: remittance.id,
+      remittance_ids: remittanceIds,
+      remittance_count: remittanceIds.length,
       retailer,
-      payment_date: firstPaymentDate,
-      eft_number: uniqueEfts.join(", "),
       balance_due: totalNet,
       total_paid: totalInvoiced,
       total_deductions: totalDiscount,
