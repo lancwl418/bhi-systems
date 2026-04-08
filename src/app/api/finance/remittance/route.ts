@@ -363,6 +363,45 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Backfill: check if newly uploaded invoice_numbers can resolve
+    // previously unlinked deduction lines in DB
+    let backfilledCount = 0;
+    const newInvoiceNumbers = lines
+      .filter((l) => l.invoice_number && l.order_id)
+      .map((l) => ({ invoice_number: l.invoice_number, order_id: l.order_id!, po_number: l.po_number }));
+
+    if (newInvoiceNumbers.length > 0) {
+      const invNums = [...new Set(newInvoiceNumbers.map((n) => n.invoice_number))];
+      // Find unlinked deduction lines whose adjustment_number matches these invoice_numbers
+      for (let i = 0; i < invNums.length; i += 200) {
+        const batch = invNums.slice(i, i + 200);
+        const { data: unlinked } = await supabase
+          .from("remittance_lines")
+          .select("id, adjustment_number")
+          .in("adjustment_number", batch)
+          .is("order_id", null);
+
+        if (unlinked && unlinked.length > 0) {
+          // Build lookup from this upload's invoice data
+          const invLookup: Record<string, { order_id: string; po_number: string }> = {};
+          for (const n of newInvoiceNumbers) {
+            invLookup[n.invoice_number] = { order_id: n.order_id, po_number: n.po_number };
+          }
+
+          for (const row of unlinked) {
+            const match = invLookup[row.adjustment_number];
+            if (match) {
+              await supabase
+                .from("remittance_lines")
+                .update({ order_id: match.order_id, po_number: match.po_number })
+                .eq("id", row.id);
+              backfilledCount++;
+            }
+          }
+        }
+      }
+    }
+
     // Stats
     const matched = lines.filter((l) => l.order_id).length;
     const unmatched = lines.filter((l) => l.po_number && !l.order_id).length;
@@ -381,6 +420,7 @@ export async function POST(request: NextRequest) {
       unmatched,
       no_po: noPO,
       deductions_linked: linkedCount,
+      deductions_backfilled: backfilledCount,
       duplicates_skipped: duplicateCount,
     });
   } catch (err: any) {
