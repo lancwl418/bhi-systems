@@ -58,7 +58,7 @@ async function getOrder(id: string) {
 
   const { data: invoices } = await supabase
     .from("order_invoices")
-    .select("*")
+    .select("*, order_invoice_items(*)")
     .eq("order_id", id)
     .order("invoice_date");
 
@@ -304,18 +304,43 @@ export default async function OrderDetailPage({ params }: Props) {
                   <TableHead>Invoice #</TableHead>
                   <TableHead>Invoice Date</TableHead>
                   <TableHead>SKU</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead className="text-right">Unit Cost</TableHead>
+                  <TableHead className="text-right">Invoice Total</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {order.invoices.map((inv: any) => (
-                  <TableRow key={inv.id}>
-                    <TableCell className="font-mono text-sm font-medium">{inv.invoice_number}</TableCell>
-                    <TableCell className="text-sm">{inv.invoice_date ? String(inv.invoice_date).slice(0, 10) : "—"}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{inv.sku_code || "—"}</TableCell>
-                    <TableCell className="text-right font-mono text-sm">${parseFloat(inv.invoice_amount).toFixed(2)}</TableCell>
-                  </TableRow>
-                ))}
+                {order.invoices.map((inv: any) => {
+                  const items = inv.order_invoice_items || [];
+                  if (items.length === 0) {
+                    return (
+                      <TableRow key={inv.id}>
+                        <TableCell className="font-mono text-sm font-medium">{inv.invoice_number}</TableCell>
+                        <TableCell className="text-sm">{inv.invoice_date ? String(inv.invoice_date).slice(0, 10) : "—"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{inv.sku_code || "—"}</TableCell>
+                        <TableCell className="text-right text-sm">—</TableCell>
+                        <TableCell className="text-right text-sm">—</TableCell>
+                        <TableCell className="text-right font-mono text-sm font-medium">${parseFloat(inv.invoice_amount).toFixed(2)}</TableCell>
+                      </TableRow>
+                    );
+                  }
+                  return items.map((item: any, idx: number) => (
+                    <TableRow key={`${inv.id}-${idx}`}>
+                      {idx === 0 ? (
+                        <>
+                          <TableCell className="font-mono text-sm font-medium" rowSpan={items.length}>{inv.invoice_number}</TableCell>
+                          <TableCell className="text-sm" rowSpan={items.length}>{inv.invoice_date ? String(inv.invoice_date).slice(0, 10) : "—"}</TableCell>
+                        </>
+                      ) : null}
+                      <TableCell className="text-sm text-muted-foreground">{item.sku_code}</TableCell>
+                      <TableCell className="text-right text-sm">{item.quantity}</TableCell>
+                      <TableCell className="text-right font-mono text-sm">${parseFloat(item.unit_cost).toFixed(2)}</TableCell>
+                      {idx === 0 ? (
+                        <TableCell className="text-right font-mono text-sm font-medium" rowSpan={items.length}>${parseFloat(inv.invoice_amount).toFixed(2)}</TableCell>
+                      ) : null}
+                    </TableRow>
+                  ));
+                })}
               </TableBody>
             </Table>
           </CardContent>
