@@ -12,21 +12,15 @@ import {
 } from "@/components/ui/table";
 import { createServiceSupabase } from "@/lib/supabase/server";
 import Link from "next/link";
+import { UploadInvoices } from "./upload-invoices";
 
 async function fetchAll<T = Record<string, any>>(
-  supabase: any, table: string, select: string, filters?: { col: string; op: string; val: any }[],
+  supabase: any, table: string, select: string,
 ): Promise<T[]> {
   const all: T[] = [];
   let from = 0;
   while (true) {
-    let q = supabase.from(table).select(select).range(from, from + 999);
-    if (filters) {
-      for (const f of filters) {
-        if (f.op === "neq") q = q.neq(f.col, f.val);
-        if (f.op === "not.is") q = q.not(f.col, "is", f.val);
-      }
-    }
-    const { data } = await q;
+    const { data } = await supabase.from(table).select(select).range(from, from + 999);
     if (!data || data.length === 0) break;
     all.push(...data);
     if (data.length < 1000) break;
@@ -35,89 +29,97 @@ async function fetchAll<T = Record<string, any>>(
   return all;
 }
 
-interface InvoiceGroup {
+interface InvoiceRow {
   invoice_number: string;
   po_number: string;
   order_id: string | null;
-  order_total: number;
-  invoice_amount: number;
   invoice_date: string | null;
-  net_received: number;
+  invoice_amount: number;
+  sku_code: string | null;
+  // From remittance data
+  payment_amount: number;
   deductions: number;
-  deduction_lines: { adjustment_number: string; amount: number; reason: string; date: string | null }[];
-  eft_number: string;
-  retailer: string;
+  net_received: number;
+  paid: boolean;
 }
 
 async function getInvoiceData() {
   const supabase = await createServiceSupabase();
 
-  // Get all remittance lines with invoice_number (payment lines)
-  const paymentLines = await fetchAll(supabase, "remittance_lines",
-    "invoice_number, invoice_date, invoice_amount, line_amount, discount, po_number, order_id, eft_number, remittances(retailer), orders(channel_order_id, total)",
-    [{ col: "invoice_number", op: "neq", val: "" }]
+  // Get all invoices from order_invoices table
+  const invoices = await fetchAll(supabase, "order_invoices",
+    "invoice_number, po_number, order_id, invoice_date, invoice_amount, sku_code"
   );
 
-  // Get all deduction lines (have adjustment_number, linked to orders)
-  const deductionLines = await fetchAll(supabase, "remittance_lines",
-    "adjustment_number, adjustment_date, adjustment_reason, line_amount, po_number, order_id, eft_number",
-    [{ col: "adjustment_number", op: "neq", val: "" }]
+  // Get payment data from remittance_lines (grouped by invoice_number)
+  const remittancePayments = await fetchAll(supabase, "remittance_lines",
+    "invoice_number, line_amount, discount"
   );
 
-  // Build invoice groups
-  const invoiceMap: Record<string, InvoiceGroup> = {};
+  // Get deduction data (adjustment_number = invoice_number)
+  const remittanceDeductions = await fetchAll(supabase, "remittance_lines",
+    "adjustment_number, line_amount"
+  );
 
-  for (const l of paymentLines) {
-    const inv = l.invoice_number;
-    if (!inv) continue;
-    if (!invoiceMap[inv]) {
-      invoiceMap[inv] = {
-        invoice_number: inv,
-        po_number: l.po_number || "",
-        order_id: l.order_id,
-        order_total: parseFloat(l.orders?.total) || 0,
-        invoice_amount: parseFloat(l.invoice_amount) || 0,
-        invoice_date: l.invoice_date,
-        net_received: 0,
-        deductions: 0,
-        deduction_lines: [],
-        eft_number: l.eft_number || "",
-        retailer: l.remittances?.retailer || "",
-      };
-    }
-    invoiceMap[inv].net_received += parseFloat(l.line_amount) || 0;
-    invoiceMap[inv].deductions += parseFloat(l.discount) || 0;
+  // Build payment lookup: invoice_number → { payment, deductions }
+  const paymentMap: Record<string, { payment: number; discount: number }> = {};
+  for (const l of remittancePayments) {
+    if (!l.invoice_number) continue;
+    if (!paymentMap[l.invoice_number]) paymentMap[l.invoice_number] = { payment: 0, discount: 0 };
+    paymentMap[l.invoice_number].payment += parseFloat(l.line_amount) || 0;
+    paymentMap[l.invoice_number].discount += parseFloat(l.discount) || 0;
   }
 
-  // Match deductions to invoices via adjustment_number = invoice_number
-  for (const l of deductionLines) {
-    const adj = l.adjustment_number;
-    if (!adj || !invoiceMap[adj]) continue;
+  // Build deduction lookup: adjustment_number (= invoice_number) → total deductions
+  const deductionMap: Record<string, number> = {};
+  for (const l of remittanceDeductions) {
+    if (!l.adjustment_number) continue;
     const amt = parseFloat(l.line_amount) || 0;
-    invoiceMap[adj].deductions += Math.abs(amt);
-    invoiceMap[adj].net_received += amt;
-    invoiceMap[adj].deduction_lines.push({
-      adjustment_number: adj,
-      amount: amt,
-      reason: l.adjustment_reason || "",
-      date: l.adjustment_date,
-    });
+    if (amt < 0) {
+      if (!deductionMap[l.adjustment_number]) deductionMap[l.adjustment_number] = 0;
+      deductionMap[l.adjustment_number] += Math.abs(amt);
+    }
   }
 
-  const invoices = Object.values(invoiceMap).sort((a, b) => {
+  // Combine
+  const rows: InvoiceRow[] = invoices.map((inv: any) => {
+    const pay = paymentMap[inv.invoice_number];
+    const ded = deductionMap[inv.invoice_number] || 0;
+    const paymentAmount = pay?.payment || 0;
+    const discount = pay?.discount || 0;
+    return {
+      invoice_number: inv.invoice_number,
+      po_number: inv.po_number,
+      order_id: inv.order_id,
+      invoice_date: inv.invoice_date,
+      invoice_amount: parseFloat(inv.invoice_amount) || 0,
+      sku_code: inv.sku_code,
+      payment_amount: paymentAmount,
+      deductions: discount + ded,
+      net_received: paymentAmount - ded,
+      paid: paymentAmount > 0,
+    };
+  });
+
+  // Sort by invoice_date desc
+  rows.sort((a, b) => {
     if (a.invoice_date && b.invoice_date) return b.invoice_date.localeCompare(a.invoice_date);
+    if (a.invoice_date) return -1;
+    if (b.invoice_date) return 1;
     return 0;
   });
 
-  // Summary stats
+  // Stats
   let totalInvoiced = 0, totalReceived = 0, totalDeducted = 0;
-  for (const inv of invoices) {
-    totalInvoiced += inv.invoice_amount;
-    totalReceived += inv.net_received;
-    totalDeducted += inv.deductions;
+  let paidCount = 0, unpaidCount = 0;
+  for (const r of rows) {
+    totalInvoiced += r.invoice_amount;
+    totalReceived += r.net_received;
+    totalDeducted += r.deductions;
+    if (r.paid) paidCount++; else unpaidCount++;
   }
 
-  return { invoices, totalInvoiced, totalReceived, totalDeducted };
+  return { rows, totalInvoiced, totalReceived, totalDeducted, paidCount, unpaidCount };
 }
 
 function fmt(n: number) {
@@ -129,21 +131,24 @@ export default async function InvoicesPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold">Invoices</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Invoice tracking — payments and deductions per invoice
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold">Invoices</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Invoice tracking — {data.rows.length} invoices
+          </p>
+        </div>
+        <UploadInvoices />
       </div>
 
       {/* Summary */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Invoices</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{data.invoices.length}</p>
+            <p className="text-2xl font-bold">{data.rows.length}</p>
           </CardContent>
         </Card>
         <Card>
@@ -156,18 +161,26 @@ export default async function InvoicesPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Deductions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-red-600">-${fmt(data.totalDeducted)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Net Received</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold text-green-600">${fmt(data.totalReceived)}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Paid</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-green-600">{data.paidCount}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Unpaid</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-orange-600">{data.unpaidCount}</p>
           </CardContent>
         </Card>
       </div>
@@ -183,63 +196,52 @@ export default async function InvoicesPage() {
               <TableRow>
                 <TableHead>Invoice #</TableHead>
                 <TableHead>PO Number</TableHead>
-                <TableHead>Retailer</TableHead>
+                <TableHead>SKU</TableHead>
                 <TableHead>Invoice Date</TableHead>
-                <TableHead>EFT</TableHead>
                 <TableHead className="text-right">Invoice Amount</TableHead>
+                <TableHead className="text-right">Received</TableHead>
                 <TableHead className="text-right">Deductions</TableHead>
-                <TableHead className="text-right">Net Received</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>Payment Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.invoices.length === 0 ? (
+              {data.rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center text-muted-foreground py-12">
-                    No invoices found
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-12">
+                    No invoices yet. Upload an invoice report to get started.
                   </TableCell>
                 </TableRow>
               ) : (
-                data.invoices.map((inv) => {
-                  const hasDeductions = inv.deductions > 0;
-                  return (
-                    <TableRow key={inv.invoice_number}>
-                      <TableCell className="font-mono text-sm font-medium">{inv.invoice_number}</TableCell>
-                      <TableCell>
-                        {inv.order_id ? (
-                          <Link href={`/orders/${inv.order_id}`} className="font-mono text-sm hover:underline text-blue-600">
-                            {inv.po_number}
-                          </Link>
-                        ) : (
-                          <span className="font-mono text-sm">{inv.po_number || "—"}</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-xs">{inv.retailer || "—"}</Badge>
-                      </TableCell>
-                      <TableCell className="text-sm">{inv.invoice_date || "—"}</TableCell>
-                      <TableCell className="font-mono text-sm text-muted-foreground">{inv.eft_number || "—"}</TableCell>
-                      <TableCell className="text-right font-mono text-sm">${fmt(inv.invoice_amount)}</TableCell>
-                      <TableCell className="text-right font-mono text-sm text-red-600">
-                        {hasDeductions ? `-$${fmt(inv.deductions)}` : "—"}
-                      </TableCell>
-                      <TableCell className={`text-right font-mono text-sm font-medium ${inv.net_received < 0 ? "text-red-600" : "text-green-600"}`}>
-                        ${fmt(inv.net_received)}
-                      </TableCell>
-                      <TableCell>
-                        {hasDeductions ? (
-                          <Badge variant="outline" className="text-orange-600 border-orange-300 text-xs">
-                            Deducted
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary" className="bg-green-100 text-green-800 text-xs">
-                            Paid
-                          </Badge>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
+                data.rows.map((inv) => (
+                  <TableRow key={inv.invoice_number}>
+                    <TableCell className="font-mono text-sm font-medium">{inv.invoice_number}</TableCell>
+                    <TableCell>
+                      {inv.order_id ? (
+                        <Link href={`/orders/${inv.order_id}`} className="font-mono text-sm hover:underline text-blue-600">
+                          {inv.po_number}
+                        </Link>
+                      ) : (
+                        <span className="font-mono text-sm">{inv.po_number || "—"}</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{inv.sku_code || "—"}</TableCell>
+                    <TableCell className="text-sm">{inv.invoice_date ? inv.invoice_date.slice(0, 10) : "—"}</TableCell>
+                    <TableCell className="text-right font-mono text-sm">${fmt(inv.invoice_amount)}</TableCell>
+                    <TableCell className={`text-right font-mono text-sm ${inv.net_received > 0 ? "text-green-600" : ""}`}>
+                      {inv.net_received !== 0 ? `$${fmt(inv.net_received)}` : "—"}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-sm text-red-600">
+                      {inv.deductions > 0 ? `-$${fmt(inv.deductions)}` : "—"}
+                    </TableCell>
+                    <TableCell>
+                      {inv.paid ? (
+                        <Badge variant="secondary" className="bg-green-100 text-green-800 text-xs">Paid</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-orange-600 border-orange-300 text-xs">Unpaid</Badge>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))
               )}
             </TableBody>
           </Table>
