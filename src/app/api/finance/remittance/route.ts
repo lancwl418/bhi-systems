@@ -35,15 +35,7 @@ function parseDate(val: string | number | undefined | null): string | null {
   return null;
 }
 
-// Normalize PO: HD adds "00" prefix making 10-digit POs, and XLSX may
-// parse POs as numbers stripping all leading zeros.  Orders table stores 8-digit POs.
-function normalizePO(po: string): string {
-  // 10-digit with "00" prefix → strip to 8
-  if (po.length === 10 && po.startsWith("00")) return po.slice(2);
-  // XLSX ate leading zeros → pad back to 8 digits
-  if (po.length < 8 && /^\d+$/.test(po)) return po.padStart(8, "0");
-  return po;
-}
+import { normalizePO } from "@/lib/po";
 
 // Column name aliases — maps alternative names to the canonical key
 const COLUMN_ALIASES: Record<string, string> = {
@@ -145,7 +137,7 @@ export async function POST(request: NextRequest) {
     const poNumbers = new Set<string>();
     rows.forEach((r) => {
       const po = String(r["Purchase Order Number"] || r["PO Number"] || "").trim();
-      if (po) poNumbers.add(normalizePO(po));
+      if (po) poNumbers.add(normalizePO(po, retailer));
     });
 
     // Look up orders by channel_order_id (PO number)
@@ -206,7 +198,7 @@ export async function POST(request: NextRequest) {
 
       const paymentDate = parseDate(r["Payment Date"]);
       const rawPO = String(r["Purchase Order Number"] || r["PO Number"] || "").trim();
-      const po = rawPO ? normalizePO(rawPO) : "";
+      const po = rawPO ? normalizePO(rawPO, retailer) : "";
       const invoiceDate = parseDate(r["Invoice Date"]);
       const invoiceAmount = parseCurrency(r["Invoice Amount"]);
       const lineAmount = parseCurrency(r["Line Balance Due"]);

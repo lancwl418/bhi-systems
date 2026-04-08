@@ -20,11 +20,7 @@ function parseDate(val: string | undefined | null): string | null {
   return null;
 }
 
-function normalizePO(po: string): string {
-  if (po.length === 10 && po.startsWith("00")) return po.slice(2);
-  if (po.length < 8 && /^\d+$/.test(po)) return po.padStart(8, "0");
-  return po;
-}
+import { normalizePO } from "@/lib/po";
 
 /** Parse CSV with quoted/unquoted mixed fields */
 function parseCSVLine(line: string): string[] {
@@ -84,7 +80,8 @@ export async function POST(request: NextRequest) {
       if (action !== "Invoice") continue;
 
       const rawPO = cols[colIdx["PO Number (Order)"]] || "";
-      const po = rawPO ? normalizePO(rawPO) : "";
+      const merchant = cols[colIdx["Merchant (Order)"]] || "";
+      const po = rawPO ? normalizePO(rawPO, merchant) : "";
       const invoiceNumber = cols[colIdx["Invoice Number (Transaction)"]] || "";
       const invoiceDate = parseDate(cols[colIdx["Invoice Date (Transaction)"]]);
       const invoiceAmount = parseCurrency(cols[colIdx["Invoice Total (Transaction)"]]);
