@@ -32,6 +32,8 @@ interface MonthData {
 
 export function MonthDetail({ month, monthLabel, data, channelFilter }: { month: string; monthLabel: string; data: MonthData; channelFilter: string }) {
   const [tab, setTab] = useState<"orders" | "payments" | "issues">("orders");
+  const [orderPage, setOrderPage] = useState(0);
+  const PAGE_SIZE = 100;
 
   // Build payment map per order
   const paymentByOrder: Record<string, { paid: number; deducted: number; net: number }> = {};
@@ -164,7 +166,7 @@ export function MonthDetail({ month, monthLabel, data, channelFilter }: { month:
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {enrichedOrders.slice(0, 100).map(o => (
+                {enrichedOrders.slice(orderPage * PAGE_SIZE, (orderPage + 1) * PAGE_SIZE).map(o => (
                   <TableRow key={o.id}>
                     <TableCell>
                       <Link href={`/orders/${o.id}`} className="font-mono text-sm hover:underline text-blue-600">
@@ -194,10 +196,28 @@ export function MonthDetail({ month, monthLabel, data, channelFilter }: { month:
                     </TableCell>
                   </TableRow>
                 ))}
-                {enrichedOrders.length > 100 && (
+                {enrichedOrders.length > PAGE_SIZE && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground text-sm py-4">
-                      Showing first 100 of {enrichedOrders.length} orders
+                    <TableCell colSpan={8} className="text-center py-4">
+                      <div className="flex items-center justify-center gap-4 text-sm">
+                        <button
+                          onClick={() => setOrderPage(p => p - 1)}
+                          disabled={orderPage === 0}
+                          className="rounded-md border px-3 py-1 text-sm transition-colors hover:bg-accent disabled:opacity-40 disabled:pointer-events-none"
+                        >
+                          Previous
+                        </button>
+                        <span className="text-muted-foreground">
+                          {orderPage * PAGE_SIZE + 1}–{Math.min((orderPage + 1) * PAGE_SIZE, enrichedOrders.length)} of {enrichedOrders.length}
+                        </span>
+                        <button
+                          onClick={() => setOrderPage(p => p + 1)}
+                          disabled={(orderPage + 1) * PAGE_SIZE >= enrichedOrders.length}
+                          className="rounded-md border px-3 py-1 text-sm transition-colors hover:bg-accent disabled:opacity-40 disabled:pointer-events-none"
+                        >
+                          Next
+                        </button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 )}

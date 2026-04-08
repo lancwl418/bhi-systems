@@ -180,7 +180,7 @@ export default async function MonthReconciliationPage({ params, searchParams }: 
         <div>
           <h2 className="text-2xl font-bold">{label}</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            {data.orderCount.toLocaleString()} orders &middot; Monthly reconciliation
+            {(channelFilter !== "all" && data.byChannel[channelFilter] ? data.byChannel[channelFilter].orderCount : data.orderCount).toLocaleString()} orders &middot; Monthly reconciliation
           </p>
         </div>
       </div>
@@ -207,14 +207,24 @@ export default async function MonthReconciliationPage({ params, searchParams }: 
       )}
 
       {/* Summary Cards */}
+      {(() => {
+        const ch = channelFilter !== "all" ? data.byChannel[channelFilter] : null;
+        const orderTotal = ch ? ch.orderTotal : data.orderTotal;
+        const orderCount = ch ? ch.orderCount : data.orderCount;
+        const invoiceTotal = ch ? ch.invoiceTotal : data.invoiceTotal;
+        const deductions = ch ? ch.deductions : data.deductions;
+        const netReceived = ch ? ch.netReceived : data.netReceived;
+        const outstanding = Math.max(0, orderTotal - netReceived);
+        const pctCollected = orderTotal > 0 ? Math.max(0, Math.min((netReceived / orderTotal) * 100, 100)) : 0;
+        return (
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Order Total</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">${fmt(data.orderTotal)}</p>
-            <p className="text-xs text-muted-foreground mt-1">{data.orderCount} orders</p>
+            <p className="text-2xl font-bold">${fmt(orderTotal)}</p>
+            <p className="text-xs text-muted-foreground mt-1">{orderCount} orders</p>
           </CardContent>
         </Card>
         <Card>
@@ -222,7 +232,7 @@ export default async function MonthReconciliationPage({ params, searchParams }: 
             <CardTitle className="text-sm font-medium text-muted-foreground">Invoiced</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">${fmt(data.invoiceTotal)}</p>
+            <p className="text-2xl font-bold">${fmt(invoiceTotal)}</p>
           </CardContent>
         </Card>
         <Card>
@@ -230,7 +240,7 @@ export default async function MonthReconciliationPage({ params, searchParams }: 
             <CardTitle className="text-sm font-medium text-muted-foreground">Deductions</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-red-600">-${fmt(data.deductions)}</p>
+            <p className="text-2xl font-bold text-red-600">-${fmt(deductions)}</p>
           </CardContent>
         </Card>
         <Card>
@@ -238,7 +248,7 @@ export default async function MonthReconciliationPage({ params, searchParams }: 
             <CardTitle className="text-sm font-medium text-muted-foreground">Net Received</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-green-600">${fmt(data.netReceived)}</p>
+            <p className="text-2xl font-bold text-green-600">${fmt(netReceived)}</p>
           </CardContent>
         </Card>
         <Card>
@@ -246,14 +256,16 @@ export default async function MonthReconciliationPage({ params, searchParams }: 
             <CardTitle className="text-sm font-medium text-muted-foreground">Outstanding</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-orange-600">${fmt(data.outstanding)}</p>
+            <p className="text-2xl font-bold text-orange-600">${fmt(outstanding)}</p>
             <div className="mt-2 h-2 rounded-full bg-muted overflow-hidden">
-              <div className="h-full rounded-full bg-green-500 transition-all" style={{ width: `${data.pctCollected}%` }} />
+              <div className="h-full rounded-full bg-green-500 transition-all" style={{ width: `${pctCollected}%` }} />
             </div>
-            <p className="text-xs text-muted-foreground mt-1">{data.pctCollected.toFixed(1)}% collected</p>
+            <p className="text-xs text-muted-foreground mt-1">{pctCollected.toFixed(1)}% collected</p>
           </CardContent>
         </Card>
       </div>
+        );
+      })()}
 
       <MonthDetail month={data.month} monthLabel={label} data={data} channelFilter={channelFilter} />
     </div>
