@@ -61,7 +61,7 @@ async function getMonthData(month: string) {
 
   // Get all remittance lines (usually not too many)
   const allLines = await fetchAll(supabase, "remittance_lines",
-    "id, remittance_id, order_id, po_number, invoice_number, invoice_amount, line_amount, discount, adjustment_date, adjustment_number, adjustment_reason, line_type, remittances(eft_number, payment_date, file_name, retailer)"
+    "id, remittance_id, order_id, po_number, invoice_number, invoice_date, invoice_amount, line_amount, discount, adjustment_date, adjustment_number, adjustment_reason, line_type, remittances(eft_number, payment_date, file_name, retailer)"
   );
 
   // Split lines
