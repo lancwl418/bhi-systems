@@ -82,7 +82,7 @@ async function getMonthData(month: string) {
   // Unmatched/noPO lines for this month (by invoice_date, payment_date, or adjustment_date)
   for (const l of allLines) {
     if (l.order_id && orderIds.has(l.order_id)) continue; // already counted
-    const lineMonth = (l.invoice_date || l.adjustment_date || "").slice(0, 7);
+    const lineMonth = (l.remittances?.payment_date || l.payment_date || "").slice(0, 7);
     if (lineMonth !== month) continue;
     if (!l.po_number) noPOLines.push(l);
     else if (!l.order_id) unmatchedLines.push(l);
