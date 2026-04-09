@@ -7,19 +7,26 @@ import { Upload, Loader2, CheckCircle, AlertCircle } from "lucide-react";
 export function UploadRemittance() {
   const [state, setState] = useState<"idle" | "uploading" | "done" | "error">("idle");
   const [result, setResult] = useState<any>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploadTarget, setUploadTarget] = useState<"hd" | "lowes">("hd");
+  const hdFileRef = useRef<HTMLInputElement>(null);
+  const lowesFileRef = useRef<HTMLInputElement>(null);
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>, target: "hd" | "lowes") => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setState("uploading");
+    setUploadTarget(target);
 
     try {
       const formData = new FormData();
       formData.append("file", file);
 
-      const res = await fetch("/api/finance/remittance", {
+      const endpoint = target === "lowes"
+        ? "/api/finance/remittance/lowes"
+        : "/api/finance/remittance";
+
+      const res = await fetch(endpoint, {
         method: "POST",
         body: formData,
       });
@@ -40,31 +47,46 @@ export function UploadRemittance() {
       setResult({ error: err.message });
     }
 
-    if (fileRef.current) fileRef.current.value = "";
+    if (hdFileRef.current) hdFileRef.current.value = "";
+    if (lowesFileRef.current) lowesFileRef.current.value = "";
   };
 
   return (
     <div>
       <input
-        ref={fileRef}
+        ref={hdFileRef}
         type="file"
         accept=".xls,.xlsx,.csv"
-        onChange={handleUpload}
+        onChange={(e) => handleUpload(e, "hd")}
         className="hidden"
-        id="remittance-upload"
+        id="remittance-upload-hd"
+      />
+      <input
+        ref={lowesFileRef}
+        type="file"
+        accept=".xls,.xlsx,.csv"
+        onChange={(e) => handleUpload(e, "lowes")}
+        className="hidden"
+        id="remittance-upload-lowes"
       />
 
       {state === "idle" && (
-        <Button onClick={() => fileRef.current?.click()} className="gap-2">
-          <Upload className="h-4 w-4" />
-          Upload Remittance
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => hdFileRef.current?.click()} className="gap-2">
+            <Upload className="h-4 w-4" />
+            Upload HD Remittance
+          </Button>
+          <Button onClick={() => lowesFileRef.current?.click()} variant="outline" className="gap-2">
+            <Upload className="h-4 w-4" />
+            Upload Lowe's Remittance
+          </Button>
+        </div>
       )}
 
       {state === "uploading" && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Processing...
+          Processing {uploadTarget === "lowes" ? "Lowe's" : "Home Depot"} remittance...
         </div>
       )}
 
