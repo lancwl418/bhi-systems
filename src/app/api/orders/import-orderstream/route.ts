@@ -182,6 +182,80 @@ export async function POST(request: NextRequest) {
     const skuMap: Record<string, { id: string; product_id: string }> = {};
     existingSkus?.forEach((s: any) => (skuMap[s.sku_code] = { id: s.id, product_id: s.product_id }));
 
+    // ── Find or create customers ──
+    // Build a cache: "name||email||phone" → customer_id
+    const customerCache: Record<string, string> = {};
+
+    async function findOrCreateCustomer(cust: LineItem["customer"], addr: LineItem["address"]): Promise<string | null> {
+      const name = cust.name || [cust.firstName, cust.lastName].filter(Boolean).join(" ");
+      if (!name) return null;
+
+      const cacheKey = `${name}||${cust.email}||${cust.phone}`;
+      if (customerCache[cacheKey]) return customerCache[cacheKey];
+
+      // Try to find existing customer by name + email or name + phone
+      let existing: any = null;
+      if (cust.email) {
+        const { data } = await supabase
+          .from("customers")
+          .select("id")
+          .eq("name", name)
+          .eq("email", cust.email)
+          .limit(1)
+          .maybeSingle();
+        existing = data;
+      }
+      if (!existing && cust.phone) {
+        const { data } = await supabase
+          .from("customers")
+          .select("id")
+          .eq("name", name)
+          .eq("phone", cust.phone)
+          .limit(1)
+          .maybeSingle();
+        existing = data;
+      }
+      if (!existing) {
+        // Also try by name only if no email/phone
+        const { data } = await supabase
+          .from("customers")
+          .select("id")
+          .eq("name", name)
+          .limit(1)
+          .maybeSingle();
+        existing = data;
+      }
+
+      if (existing) {
+        customerCache[cacheKey] = existing.id;
+        return existing.id;
+      }
+
+      // Create new customer
+      const { data: newCust } = await supabase
+        .from("customers")
+        .insert({
+          name,
+          email: cust.email || null,
+          phone: cust.phone || null,
+          address: {
+            address1: addr.address1,
+            address2: addr.address2,
+            city: addr.city,
+            state: addr.state,
+            country: addr.country,
+          },
+        })
+        .select("id")
+        .single();
+
+      if (newCust) {
+        customerCache[cacheKey] = newCust.id;
+        return newCust.id;
+      }
+      return null;
+    }
+
     // Insert new orders
     let inserted = 0;
     let errors = 0;
@@ -190,6 +264,13 @@ export async function POST(request: NextRequest) {
     for (let i = 0; i < newOrders.length; i += BATCH_SIZE) {
       const batch = newOrders.slice(i, i + BATCH_SIZE);
       try {
+        // Resolve customers for this batch
+        const customerIds: Record<string, string | null> = {};
+        for (const [po, group] of batch) {
+          const first = group.lines[0];
+          customerIds[po] = await findOrCreateCustomer(first.customer, first.address);
+        }
+
         const orderRows = batch.map(([po, group]) => {
           const first = group.lines[0];
           const subtotal = group.lines.reduce((sum, l) => sum + l.unitCost * l.quantity, 0);
@@ -200,6 +281,7 @@ export async function POST(request: NextRequest) {
             channel_source: "commercehub" as const,
             channel_order_id: po,
             buyer_id: po,
+            customer_id: customerIds[po] || null,
             status: mapStatus(first.status) as any,
             order_date: first.orderDate,
             subtotal,

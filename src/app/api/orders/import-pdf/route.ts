@@ -105,6 +105,63 @@ export async function POST(request: NextRequest) {
       return newBuyer!.id;
     }
 
+    // ── Customer find-or-create ──
+    const customerCache: Record<string, string> = {};
+
+    async function findOrCreateCustomer(
+      name: string,
+      phone: string,
+      address: Record<string, unknown>,
+    ): Promise<string | null> {
+      if (!name) return null;
+
+      const cacheKey = `${name}||${phone}`;
+      if (customerCache[cacheKey]) return customerCache[cacheKey];
+
+      // Try to find existing customer by name + phone
+      let existing: any = null;
+      if (phone) {
+        const { data } = await supabase
+          .from("customers")
+          .select("id")
+          .eq("name", name)
+          .eq("phone", phone)
+          .limit(1)
+          .maybeSingle();
+        existing = data;
+      }
+      if (!existing) {
+        const { data } = await supabase
+          .from("customers")
+          .select("id")
+          .eq("name", name)
+          .limit(1)
+          .maybeSingle();
+        existing = data;
+      }
+
+      if (existing) {
+        customerCache[cacheKey] = existing.id;
+        return existing.id;
+      }
+
+      const { data: newCust } = await supabase
+        .from("customers")
+        .insert({
+          name,
+          phone: phone || null,
+          address,
+        })
+        .select("id")
+        .single();
+
+      if (newCust) {
+        customerCache[cacheKey] = newCust.id;
+        return newCust.id;
+      }
+      return null;
+    }
+
     let totalInserted = 0;
     let totalUpdated = 0;
     let totalErrors = 0;
@@ -172,11 +229,19 @@ export async function POST(request: NextRequest) {
           rawPayload.company = (order.ship_to as any).company;
         }
 
+        // Find or create customer
+        const customerId = await findOrCreateCustomer(
+          order.ship_to.name,
+          order.ship_to.phone || "",
+          shippingAddress,
+        );
+
         if (existingOrderId) {
           // Update existing order with customer info from PDF
           const { error: updateError } = await supabase
             .from("orders")
             .update({
+              customer_id: customerId,
               shipping_address: shippingAddress,
               shipping_method: order.ship_via,
               raw_payload: rawPayload,
@@ -249,6 +314,7 @@ export async function POST(request: NextRequest) {
             channel_source: "manual" as const,
             channel_order_id: order.channel_order_id,
             buyer_id: buyerId,
+            customer_id: customerId,
             status: "pending" as const,
             order_date: order.order_date,
             shipping_method: order.ship_via,
