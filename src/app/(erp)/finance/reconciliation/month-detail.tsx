@@ -74,7 +74,18 @@ export function MonthDetail({ month, monthLabel, data, channelFilter }: { month:
 
   const paidOrders = enrichedOrders.filter(o => o.hasPayment);
   const unpaidOrders = enrichedOrders.filter(o => !o.hasPayment);
-  const issueCount = data.unmatchedLines.length + data.noPOLines.length;
+
+  // Filter lines by channel
+  const filteredLines = channelFilter !== "all"
+    ? data.lines.filter((l: any) => normalizeRetailer(l.remittances?.retailer || "") === channelFilter)
+    : data.lines;
+  const filteredUnmatched = channelFilter !== "all"
+    ? data.unmatchedLines.filter((l: any) => normalizeRetailer(l.remittances?.retailer || "") === channelFilter)
+    : data.unmatchedLines;
+  const filteredNoPO = channelFilter !== "all"
+    ? data.noPOLines.filter((l: any) => normalizeRetailer(l.remittances?.retailer || "") === channelFilter)
+    : data.noPOLines;
+  const issueCount = filteredUnmatched.length + filteredNoPO.length;
 
   // Channel sub-totals for this month
   const channelEntries = Object.entries(data.byChannel).sort(([, a], [, b]) => b.orderTotal - a.orderTotal);
@@ -127,7 +138,7 @@ export function MonthDetail({ month, monthLabel, data, channelFilter }: { month:
             onClick={() => setTab("payments")}
             className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${tab === "payments" ? "bg-primary text-primary-foreground border-primary" : "hover:bg-accent"}`}
           >
-            Payments ({data.lines.length})
+            Payments ({filteredLines.length})
           </button>
           {issueCount > 0 && (
             <button
@@ -244,7 +255,7 @@ export function MonthDetail({ month, monthLabel, data, channelFilter }: { month:
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.lines.map((l: any) => {
+              {filteredLines.map((l: any) => {
                 const amt = parseFloat(l.line_amount);
                 return (
                   <TableRow key={l.id}>
@@ -287,7 +298,7 @@ export function MonthDetail({ month, monthLabel, data, channelFilter }: { month:
                   </TableRow>
                 );
               })}
-              {data.lines.length === 0 && (
+              {filteredLines.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={10} className="text-center text-muted-foreground py-8">No remittance data for this month</TableCell>
                 </TableRow>
@@ -299,10 +310,10 @@ export function MonthDetail({ month, monthLabel, data, channelFilter }: { month:
         {/* Issues tab */}
         {tab === "issues" && (
           <div className="space-y-4">
-            {data.unmatchedLines.length > 0 && (
+            {filteredUnmatched.length > 0 && (
               <div>
                 <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                  Unmatched PO Lines <Badge variant="destructive">{data.unmatchedLines.length}</Badge>
+                  Unmatched PO Lines <Badge variant="destructive">{filteredUnmatched.length}</Badge>
                 </h4>
                 <Table>
                   <TableHeader>
@@ -316,7 +327,7 @@ export function MonthDetail({ month, monthLabel, data, channelFilter }: { month:
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.unmatchedLines.map((l: any) => (
+                    {filteredUnmatched.map((l: any) => (
                       <TableRow key={l.id}>
                         <TableCell className="font-mono text-sm font-medium">{l.po_number}</TableCell>
                         <TableCell>
@@ -339,10 +350,10 @@ export function MonthDetail({ month, monthLabel, data, channelFilter }: { month:
               </div>
             )}
 
-            {data.noPOLines.length > 0 && (
+            {filteredNoPO.length > 0 && (
               <div>
                 <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                  No PO Adjustments <Badge variant="outline" className="text-red-600 border-red-300">{data.noPOLines.length}</Badge>
+                  No PO Adjustments <Badge variant="outline" className="text-red-600 border-red-300">{filteredNoPO.length}</Badge>
                 </h4>
                 <Table>
                   <TableHeader>
@@ -356,7 +367,7 @@ export function MonthDetail({ month, monthLabel, data, channelFilter }: { month:
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.noPOLines.map((l: any) => (
+                    {filteredNoPO.map((l: any) => (
                       <TableRow key={l.id}>
                         <TableCell className="font-mono text-sm">{l.adjustment_number || "—"}</TableCell>
                         <TableCell className="text-sm">{l.adjustment_date || "—"}</TableCell>
