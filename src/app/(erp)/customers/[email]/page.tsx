@@ -23,6 +23,14 @@ interface Props {
 async function getCustomerData(email: string) {
   const supabase = await createServiceSupabase();
 
+  // Get customer record from customers table (by email)
+  const { data: customerRecord } = await supabase
+    .from("customers")
+    .select("*")
+    .eq("email", email)
+    .limit(1)
+    .maybeSingle();
+
   // Get warranty records for this email
   const { data: warranties } = await supabase
     .from("warranties")
@@ -37,27 +45,38 @@ async function getCustomerData(email: string) {
     .eq("customer_email", email)
     .order("submitted_at", { ascending: false });
 
-  // Get orders where raw_payload might contain this email (optional)
-  // For now, just use warranty data as the primary source
+  // Get orders linked to this customer (via customer_id or raw_payload email)
+  let orders: any[] = [];
+  if (customerRecord) {
+    const { data } = await supabase
+      .from("orders")
+      .select("id, channel_order_id, channel_source, order_date, status, total, raw_payload, shipping_address")
+      .eq("customer_id", customerRecord.id)
+      .order("order_date", { ascending: false });
+    orders = data ?? [];
+  }
 
   if (
     (!warranties || warranties.length === 0) &&
-    (!registrations || registrations.length === 0)
+    (!registrations || registrations.length === 0) &&
+    !customerRecord &&
+    orders.length === 0
   ) {
     return null;
   }
 
-  // Derive customer info from first available source
+  // Derive customer info — prefer customers table, then warranty, then registration
   const w = warranties?.[0];
   const r = registrations?.[0];
 
   return {
     email,
-    name: w?.customer_name || r?.customer_name || "",
-    phone: w?.customer_phone || "",
-    address: w?.shipping_address || {},
+    name: customerRecord?.name || w?.customer_name || r?.customer_name || "",
+    phone: customerRecord?.phone || w?.customer_phone || "",
+    address: customerRecord?.address || w?.shipping_address || {},
     warranties: warranties ?? [],
     registrations: registrations ?? [],
+    orders,
   };
 }
 
@@ -67,6 +86,10 @@ const statusColors: Record<string, string> = {
   approved: "bg-green-100 text-green-800",
   rejected: "bg-red-100 text-red-800",
   resolved: "bg-gray-100 text-gray-800",
+  pending: "bg-yellow-100 text-yellow-800",
+  shipped: "bg-green-100 text-green-800",
+  delivered: "bg-emerald-100 text-emerald-800",
+  cancelled: "bg-red-100 text-red-800",
 };
 
 export default async function CustomerDetailPage({ params }: Props) {
@@ -201,6 +224,75 @@ export default async function CustomerDetailPage({ params }: Props) {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Orders */}
+      {customer.orders.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium">
+              Orders ({customer.orders.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>PO Number</TableHead>
+                  <TableHead>Channel</TableHead>
+                  <TableHead>Order Date</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Shipping Address</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {customer.orders.map((o: any) => {
+                  const addr = o.shipping_address || {};
+                  const addrLine = [
+                    addr.line1 || addr.address1,
+                    addr.city,
+                    addr.state,
+                  ].filter(Boolean).join(", ");
+                  return (
+                    <TableRow key={o.id}>
+                      <TableCell className="font-mono text-sm">
+                        <Link
+                          href={`/orders/${o.id}`}
+                          className="hover:underline text-blue-600 font-medium"
+                        >
+                          {o.channel_order_id}
+                        </Link>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">
+                          {o.raw_payload?.retailer || o.channel_source}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {o.order_date ? new Date(o.order_date).toLocaleDateString() : "—"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          className={statusColors[o.status] || ""}
+                          variant="secondary"
+                        >
+                          {o.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
+                        {addrLine || "—"}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm font-medium">
+                        ${parseFloat(o.total || 0).toFixed(2)}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Registrations */}
       {customer.registrations.length > 0 && (
