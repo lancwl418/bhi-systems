@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { LineTabs } from "./line-tabs";
+import { DeleteRemittanceButton } from "./delete-button";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -62,6 +63,7 @@ export default async function RemittanceDetailPage({ params }: Props) {
             {remittance.retailer} &middot; EFT {remittance.eft_number} &middot; Payment: {remittance.payment_date}
           </p>
         </div>
+        <DeleteRemittanceButton id={remittance.id} fileName={remittance.file_name} />
       </div>
 
       {/* Summary Cards */}
