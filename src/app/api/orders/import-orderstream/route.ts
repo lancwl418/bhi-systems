@@ -139,11 +139,11 @@ export async function POST(request: NextRequest) {
           company: clean(c[col["ShipTo Company Name"]]),
         },
         customer: {
-          name: clean(c[col["Customer Name"]] ?? c[col["ShipTo Name"]]),
+          name: clean(c[col["Customer Name"]]) || clean(c[col["ShipTo Name"]]),
           firstName: clean(c[col["ShipTo First Name"]]),
           lastName: clean(c[col["ShipTo Last Name"]]),
-          email: clean(c[col["Customer Email"]] ?? c[col["ShipTo Email"]]),
-          phone: clean(c[col["Customer Day Phone"]] ?? c[col["ShipTo Day Phone"]]),
+          email: clean(c[col["Customer Email"]]) || clean(c[col["ShipTo Email"]]),
+          phone: clean(c[col["Customer Day Phone"]]) || clean(c[col["ShipTo Day Phone"]]),
         },
         shipping: parseCurrency(c[col["Shipping"]]),
       });
@@ -227,6 +227,21 @@ export async function POST(request: NextRequest) {
       }
 
       if (existing) {
+        // Update missing fields on existing customer
+        const updates: Record<string, unknown> = {};
+        if (cust.email) updates.email = cust.email;
+        if (cust.phone) updates.phone = cust.phone;
+        const addrObj = {
+          address1: addr.address1,
+          address2: addr.address2,
+          city: addr.city,
+          state: addr.state,
+          country: addr.country,
+        };
+        if (addr.address1) updates.address = addrObj;
+        if (Object.keys(updates).length > 0) {
+          await supabase.from("customers").update(updates).eq("id", existing.id);
+        }
         customerCache[cacheKey] = existing.id;
         return existing.id;
       }
@@ -338,18 +353,32 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Update status for existing orders if changed
+    // Update status & customer for existing orders
     let statusUpdated = 0;
     for (const [po, group] of duplicateOrders) {
       const existing = existingOrderMap.get(po)!;
-      const newStatus = mapStatus(group.lines[0].status);
-      if (existing.status !== newStatus) {
-        const { error } = await supabase
-          .from("orders")
-          .update({ status: newStatus, updated_at: new Date().toISOString() })
-          .eq("id", existing.id);
-        if (!error) statusUpdated++;
-      }
+      const first = group.lines[0];
+      const newStatus = mapStatus(first.status);
+      const customerId = await findOrCreateCustomer(first.customer, first.address);
+
+      const updates: Record<string, unknown> = {
+        updated_at: new Date().toISOString(),
+        shipping_address: first.address,
+        raw_payload: {
+          retailer: normalizeRetailer(first.merchant),
+          customer_name: first.customer.name,
+          customer_email: first.customer.email,
+          customer_phone: first.customer.phone,
+        },
+      };
+      if (customerId) updates.customer_id = customerId;
+      if (existing.status !== newStatus) updates.status = newStatus;
+
+      const { error } = await supabase
+        .from("orders")
+        .update(updates)
+        .eq("id", existing.id);
+      if (!error) statusUpdated++;
     }
 
     return NextResponse.json({
