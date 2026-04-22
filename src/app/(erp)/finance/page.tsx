@@ -8,33 +8,36 @@ import { DollarSign, CreditCard, FileText, BarChart3, AlertTriangle } from "luci
 async function getDashboardData() {
   const supabase = await createServiceSupabase();
 
-  // Invoice total from order_invoices
-  let invoiceTotal = 0;
-  let invFrom = 0;
-  while (true) {
-    const { data } = await supabase.from("order_invoices").select("invoice_amount").range(invFrom, invFrom + 999);
-    if (!data || data.length === 0) break;
-    data.forEach((d: any) => { invoiceTotal += parseFloat(d.invoice_amount) || 0; });
-    if (data.length < 1000) break;
-    invFrom += 1000;
-  }
+  // Run ALL queries in parallel
+  const [invoiceTotal, remittanceResult, totalOrders, totalRemittances, matchedLines, unmatchedLines, noPOLines] = await Promise.all([
+    // Invoice total (paginated)
+    (async () => {
+      let total = 0;
+      let from = 0;
+      while (true) {
+        const { data } = await supabase.from("order_invoices").select("invoice_amount").range(from, from + 999);
+        if (!data || data.length === 0) break;
+        for (const d of data) total += parseFloat(d.invoice_amount) || 0;
+        if (data.length < 1000) break;
+        from += 1000;
+      }
+      return total;
+    })(),
+    supabase.from("remittances").select("total_deductions, balance_due"),
+    supabase.from("orders").select("*", { count: "exact", head: true }),
+    supabase.from("remittances").select("*", { count: "exact", head: true }),
+    supabase.from("remittance_lines").select("*", { count: "exact", head: true }).not("order_id", "is", null),
+    supabase.from("remittance_lines").select("*", { count: "exact", head: true }).is("order_id", null).neq("po_number", ""),
+    supabase.from("remittance_lines").select("*", { count: "exact", head: true }).is("order_id", null).eq("po_number", ""),
+  ]);
 
-  // Remittance totals (deductions + received)
-  const { data: remittances } = await supabase.from("remittances").select("total_deductions, balance_due");
   let totalDeductions = 0, totalReceived = 0;
-  (remittances ?? []).forEach((r: any) => {
+  (remittanceResult.data ?? []).forEach((r: any) => {
     totalDeductions += parseFloat(r.total_deductions) || 0;
     totalReceived += parseFloat(r.balance_due) || 0;
   });
 
-  // Counts
-  const { count: totalOrders } = await supabase.from("orders").select("*", { count: "exact", head: true });
-  const { count: totalRemittances } = await supabase.from("remittances").select("*", { count: "exact", head: true });
-  const { count: matchedLines } = await supabase.from("remittance_lines").select("*", { count: "exact", head: true }).not("order_id", "is", null);
-  const { count: unmatchedLines } = await supabase.from("remittance_lines").select("*", { count: "exact", head: true }).is("order_id", null).neq("po_number", "");
-  const { count: noPOLines } = await supabase.from("remittance_lines").select("*", { count: "exact", head: true }).is("order_id", null).eq("po_number", "");
-
-  return { invoiceTotal, totalDeductions, totalReceived, totalOrders: totalOrders || 0, totalRemittances: totalRemittances || 0, matchedLines: matchedLines || 0, unmatchedLines: unmatchedLines || 0, noPOLines: noPOLines || 0 };
+  return { invoiceTotal, totalDeductions, totalReceived, totalOrders: totalOrders.count || 0, totalRemittances: totalRemittances.count || 0, matchedLines: matchedLines.count || 0, unmatchedLines: unmatchedLines.count || 0, noPOLines: noPOLines.count || 0 };
 }
 
 function fmt(n: number) {

@@ -13,31 +13,30 @@ interface Props {
 async function getRemittance(id: string) {
   const supabase = await createServiceSupabase();
 
-  const { data: remittance } = await supabase
-    .from("remittances")
-    .select("*")
-    .eq("id", id)
-    .single();
+  // Fetch remittance and its lines in parallel
+  const [remittanceResult, allLines] = await Promise.all([
+    supabase.from("remittances").select("*").eq("id", id).single(),
+    (async () => {
+      const lines: any[] = [];
+      let from = 0;
+      while (true) {
+        const { data } = await supabase
+          .from("remittance_lines")
+          .select("*, orders(channel_order_id, status, total)")
+          .eq("remittance_id", id)
+          .order("line_number")
+          .range(from, from + 999);
+        if (!data || data.length === 0) break;
+        lines.push(...data);
+        if (data.length < 1000) break;
+        from += 1000;
+      }
+      return lines;
+    })(),
+  ]);
 
-  if (!remittance) return null;
-
-  // Fetch all lines (Supabase defaults to 1000 max per query)
-  const allLines: any[] = [];
-  let from = 0;
-  while (true) {
-    const { data } = await supabase
-      .from("remittance_lines")
-      .select("*, orders(channel_order_id, status, total)")
-      .eq("remittance_id", id)
-      .order("line_number")
-      .range(from, from + 999);
-    if (!data || data.length === 0) break;
-    allLines.push(...data);
-    if (data.length < 1000) break;
-    from += 1000;
-  }
-
-  return { ...remittance, lines: allLines };
+  if (!remittanceResult.data) return null;
+  return { ...remittanceResult.data, lines: allLines };
 }
 
 export default async function RemittanceDetailPage({ params }: Props) {

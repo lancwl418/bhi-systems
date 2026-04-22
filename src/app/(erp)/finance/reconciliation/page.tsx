@@ -65,10 +65,13 @@ interface MonthData {
 async function getReconciliationData() {
   const supabase = await createServiceSupabase();
 
-  const allOrders = await fetchAll(supabase, "orders", "id, channel_order_id, order_date, total, raw_payload");
-  const allLines = await fetchAll(supabase, "remittance_lines",
-    "id, remittance_id, order_id, po_number, invoice_number, invoice_date, invoice_amount, line_amount, discount, adjustment_date, adjustment_number, adjustment_reason, line_type, remittances(eft_number, payment_date, file_name, retailer)"
-  );
+  // Fetch orders and remittance lines in parallel
+  const [allOrders, allLines] = await Promise.all([
+    fetchAll(supabase, "orders", "id, order_date, total, raw_payload"),
+    fetchAll(supabase, "remittance_lines",
+      "id, remittance_id, order_id, po_number, invoice_number, invoice_date, invoice_amount, line_amount, discount, adjustment_date, adjustment_number, adjustment_reason, line_type, remittances(eft_number, payment_date, file_name, retailer)"
+    ),
+  ]);
 
   // Index lines by order_id
   const linesByOrderId: Record<string, any[]> = {};

@@ -20,63 +20,59 @@ interface Props {
   searchParams: Promise<{ view?: string }>;
 }
 
+async function fetchAllPaginated(
+  supabase: any,
+  query: () => any,
+): Promise<any[]> {
+  const all: any[] = [];
+  let from = 0;
+  while (true) {
+    const { data } = await query().range(from, from + 999);
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < 1000) break;
+    from += 1000;
+  }
+  return all;
+}
+
 async function getFinanceData() {
   const supabase = await createServiceSupabase();
 
-  const { data: remittances } = await supabase
-    .from("remittances")
-    .select("*")
-    .order("created_at", { ascending: false });
+  // Run all three queries in parallel
+  const [remittanceResult, unmatchedLines, noPOLines] = await Promise.all([
+    supabase.from("remittances").select("*").order("created_at", { ascending: false }),
+    fetchAllPaginated(supabase, () =>
+      supabase.from("remittance_lines")
+        .select("*, remittances(retailer, payment_date, eft_number, file_name)")
+        .is("order_id", null).neq("po_number", "")
+        .order("created_at", { ascending: false })
+    ),
+    fetchAllPaginated(supabase, () =>
+      supabase.from("remittance_lines")
+        .select("*, remittances(retailer, payment_date, eft_number, file_name)")
+        .eq("po_number", "")
+        .order("created_at", { ascending: false })
+    ),
+  ]);
 
+  const remittances = remittanceResult.data ?? [];
   let invoiceTotal = 0;
   let totalDeductions = 0;
   let totalBalanceDue = 0;
-  (remittances ?? []).forEach((r: any) => {
+  for (const r of remittances) {
     invoiceTotal += parseFloat(r.total_paid) || 0;
     totalDeductions += parseFloat(r.total_deductions) || 0;
     totalBalanceDue += parseFloat(r.balance_due) || 0;
-  });
-
-  // Unmatched lines (have PO but no matching order) — paginate past 1000 limit
-  const unmatchedLines: any[] = [];
-  let umFrom = 0;
-  while (true) {
-    const { data } = await supabase
-      .from("remittance_lines")
-      .select("*, remittances(retailer, payment_date, eft_number, file_name)")
-      .is("order_id", null)
-      .neq("po_number", "")
-      .order("created_at", { ascending: false })
-      .range(umFrom, umFrom + 999);
-    if (!data || data.length === 0) break;
-    unmatchedLines.push(...data);
-    if (data.length < 1000) break;
-    umFrom += 1000;
-  }
-
-  // No-PO adjustments — paginate past 1000 limit
-  const noPOLines: any[] = [];
-  let npFrom = 0;
-  while (true) {
-    const { data } = await supabase
-      .from("remittance_lines")
-      .select("*, remittances(retailer, payment_date, eft_number, file_name)")
-      .eq("po_number", "")
-      .order("created_at", { ascending: false })
-      .range(npFrom, npFrom + 999);
-    if (!data || data.length === 0) break;
-    noPOLines.push(...data);
-    if (data.length < 1000) break;
-    npFrom += 1000;
   }
 
   return {
-    remittances: remittances ?? [],
+    remittances,
     invoiceTotal,
     totalDeductions,
     totalBalanceDue,
-    unmatchedLines: unmatchedLines ?? [],
-    noPOLines: noPOLines ?? [],
+    unmatchedLines,
+    noPOLines,
   };
 }
 

@@ -52,33 +52,30 @@ interface InvoiceRow {
 async function getInvoiceData() {
   const supabase = await createServiceSupabase();
 
-  const invoices = await fetchAll(supabase, "order_invoices",
-    "invoice_number, po_number, order_id, invoice_date, invoice_amount, sku_code"
-  );
-
-  const remittancePayments = await fetchAll(supabase, "remittance_lines",
-    "invoice_number, line_amount, discount"
-  );
-
-  const remittanceDeductions = await fetchAll(supabase, "remittance_lines",
-    "adjustment_number, line_amount"
-  );
+  // Fetch invoices and remittance lines in parallel (single query for lines instead of two)
+  const [invoices, allLines] = await Promise.all([
+    fetchAll(supabase, "order_invoices",
+      "invoice_number, po_number, order_id, invoice_date, invoice_amount, sku_code"
+    ),
+    fetchAll(supabase, "remittance_lines",
+      "invoice_number, adjustment_number, line_amount, discount"
+    ),
+  ]);
 
   const paymentMap: Record<string, { payment: number; discount: number }> = {};
-  for (const l of remittancePayments) {
-    if (!l.invoice_number) continue;
-    if (!paymentMap[l.invoice_number]) paymentMap[l.invoice_number] = { payment: 0, discount: 0 };
-    paymentMap[l.invoice_number].payment += parseFloat(l.line_amount) || 0;
-    paymentMap[l.invoice_number].discount += parseFloat(l.discount) || 0;
-  }
-
   const deductionMap: Record<string, number> = {};
-  for (const l of remittanceDeductions) {
-    if (!l.adjustment_number) continue;
-    const amt = parseFloat(l.line_amount) || 0;
-    if (amt < 0) {
-      if (!deductionMap[l.adjustment_number]) deductionMap[l.adjustment_number] = 0;
-      deductionMap[l.adjustment_number] += Math.abs(amt);
+  for (const l of allLines) {
+    if (l.invoice_number) {
+      if (!paymentMap[l.invoice_number]) paymentMap[l.invoice_number] = { payment: 0, discount: 0 };
+      paymentMap[l.invoice_number].payment += parseFloat(l.line_amount) || 0;
+      paymentMap[l.invoice_number].discount += parseFloat(l.discount) || 0;
+    }
+    if (l.adjustment_number) {
+      const amt = parseFloat(l.line_amount) || 0;
+      if (amt < 0) {
+        if (!deductionMap[l.adjustment_number]) deductionMap[l.adjustment_number] = 0;
+        deductionMap[l.adjustment_number] += Math.abs(amt);
+      }
     }
   }
 

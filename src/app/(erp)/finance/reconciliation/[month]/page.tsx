@@ -49,20 +49,20 @@ async function getMonthData(month: string) {
   const startDate = `${month}-01`;
   const nextMonth = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`;
 
-  // Fetch orders for this month only
-  const orders = await fetchAll(supabase, "orders", "id, channel_order_id, order_date, total, raw_payload",
-    { col: "order_date", op: "gte", val: startDate }
-  );
+  // Fetch orders and remittance lines in parallel
+  const [orders, allLines] = await Promise.all([
+    fetchAll(supabase, "orders", "id, channel_order_id, order_date, total, raw_payload",
+      { col: "order_date", op: "gte", val: startDate }
+    ),
+    fetchAll(supabase, "remittance_lines",
+      "id, remittance_id, order_id, po_number, invoice_number, invoice_date, invoice_amount, line_amount, discount, adjustment_date, adjustment_number, adjustment_reason, line_type, remittances(eft_number, payment_date, file_name, retailer)"
+    ),
+  ]);
   // Filter client-side for < nextMonth (fetchAll only supports one filter)
   const monthOrders = orders.filter(o => (o.order_date || "") < nextMonth);
 
   // Fetch all remittance lines that match these orders
   const orderIds = new Set(monthOrders.map(o => o.id));
-
-  // Get all remittance lines (usually not too many)
-  const allLines = await fetchAll(supabase, "remittance_lines",
-    "id, remittance_id, order_id, po_number, invoice_number, invoice_date, invoice_amount, line_amount, discount, adjustment_date, adjustment_number, adjustment_reason, line_type, remittances(eft_number, payment_date, file_name, retailer)"
-  );
 
   // Split lines
   const matchedLines: any[] = [];
