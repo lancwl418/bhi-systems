@@ -206,6 +206,22 @@ async function getDashboardData(dateFrom: string | null, dateTo: string | null) 
     .sort((a, b) => b.qty - a.qty)
     .slice(0, 10);
 
+  // TODO: REMOVE — hard-coded demo data for screenshot
+  const demoChannels: Record<string, { orders: number; revenue: number; shipped: number; pending: number; cancelled: number }> = {
+    "AAFES":             { orders: 3, revenue: 1_245, shipped: 2, pending: 1, cancelled: 0 },
+    "Global Industrial": { orders: 7, revenue: 3_890, shipped: 6, pending: 1, cancelled: 0 },
+    "Menards":           { orders: 5, revenue: 2_150, shipped: 4, pending: 1, cancelled: 0 },
+    "Target":            { orders: 8, revenue: 4_320, shipped: 7, pending: 1, cancelled: 0 },
+    "Walmart":           { orders: 6, revenue: 3_475, shipped: 5, pending: 1, cancelled: 0 },
+  };
+  for (const [ch, stats] of Object.entries(demoChannels)) {
+    if (!channels[ch]) {
+      channels[ch] = stats;
+      totalOrderCount += stats.orders;
+      totalRevenue += stats.revenue;
+    }
+  }
+
   return {
     totalProducts: totalProducts ?? 0,
     activeProducts: activeProducts ?? 0,
