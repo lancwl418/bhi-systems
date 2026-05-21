@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MANUAL_SALES_PLATFORMS,
   buildDailySalesReport,
+  getTodayInSalesTimeZone,
   normalizeSalesModel,
   normalizeSalesPlatform,
 } from "./sales-report";
@@ -50,6 +51,13 @@ describe("normalizeSalesPlatform", () => {
     expect(normalizeSalesPlatform("eBay - Best")).toBe("eBay");
     expect(normalizeSalesPlatform("eBay - AUX")).toBe("eBay");
     expect(normalizeSalesPlatform("ebay - deal")).toBe("eBay");
+  });
+});
+
+describe("getTodayInSalesTimeZone", () => {
+  it("uses the sales report business timezone for the default date", () => {
+    expect(getTodayInSalesTimeZone(new Date("2026-05-22T06:30:00.000Z"))).toBe("2026-05-21");
+    expect(getTodayInSalesTimeZone(new Date("2026-05-22T08:30:00.000Z"))).toBe("2026-05-22");
   });
 });
 

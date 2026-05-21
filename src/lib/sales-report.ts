@@ -30,6 +30,8 @@ const SALES_VARIANT_LABELS: Record<string, string> = {
   D: "Yes Wifi 25ft",
 };
 
+const SALES_REPORT_TIME_ZONE = "America/Los_Angeles";
+
 export const SALES_REPORT_MODELS = [
   "T17 12K No Wifi",
   "T17 12K No Wifi 25ft",
@@ -300,7 +302,21 @@ function isMissingTableError(error: { code?: string; message?: string } | null):
 export function normalizeSalesDate(input?: string | null): string {
   const value = cleanText(input);
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-  return new Date().toISOString().slice(0, 10);
+  return getTodayInSalesTimeZone();
+}
+
+export function getTodayInSalesTimeZone(date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: SALES_REPORT_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+  if (!year || !month || !day) return date.toISOString().slice(0, 10);
+  return `${year}-${month}-${day}`;
 }
 
 export function isManualSalesPlatform(platform: string): boolean {
