@@ -82,8 +82,16 @@ export function ImportOrderStream() {
             <p className="text-green-700 mt-1">
               {result.inserted} orders imported, {result.skipped} skipped (duplicates)
               {result.statusUpdated > 0 && `, ${result.statusUpdated} status updated`}
+              {result.itemsBackfilled > 0 && `, ${result.itemsBackfilled} items backfilled`}
+              {result.itemQuantityBackfilled > 0 && ` (${result.itemQuantityBackfilled} qty)`}
+              {result.itemBackfillErrors > 0 && `, ${result.itemBackfillErrors} item backfill errors`}
               {result.errors > 0 && `, ${result.errors} errors`}
             </p>
+            {result.errorMessages?.length > 0 && (
+              <p className="text-green-700 mt-1 text-xs">
+                {result.errorMessages.slice(0, 3).join(" / ")}
+              </p>
+            )}
             <p className="text-green-600 mt-1 text-xs">Refreshing page...</p>
           </div>
         </div>

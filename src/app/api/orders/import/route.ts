@@ -335,7 +335,7 @@ export async function POST(request: NextRequest) {
           order.lines.forEach((l) => {
             allItems.push({
               order_id: orderId,
-              sku_id: skuMap[l["Supplier SKU"]]?.id || null,
+              sku_id: skuMap[l["Supplier SKU"]]?.id || "",
               sku_code: l["Supplier SKU"],
               product_name: l["Item Description"],
               quantity: parseInt(l["Quantity"]),

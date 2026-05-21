@@ -333,7 +333,7 @@ export async function POST(request: NextRequest) {
         // Insert order items
         const orderItems = order.items.map((item) => ({
           order_id: insertedOrder!.id,
-          sku_id: skuMap[item.sku_code]?.id || null,
+          sku_id: skuMap[item.sku_code]?.id || "",
           sku_code: item.sku_code,
           product_name: item.product_name,
           quantity: item.quantity,

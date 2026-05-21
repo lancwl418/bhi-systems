@@ -14,9 +14,10 @@ import {
 } from "lucide-react";
 import { DateFilter } from "./date-filter";
 import { normalizeRetailer } from "@/lib/retailers";
+import { SalesReport } from "./sales-report";
 
 interface Props {
-  searchParams: Promise<{ period?: string; from?: string; to?: string }>;
+  searchParams: Promise<{ period?: string; from?: string; to?: string; salesDate?: string }>;
 }
 
 function resolveDateRange(params: { period?: string; from?: string; to?: string }): { from: string | null; to: string | null; label: string } {
@@ -313,6 +314,8 @@ export default async function DashboardPage({ searchParams }: Props) {
           </CardContent>
         </Card>
       </div>
+
+      <SalesReport salesDate={params.salesDate} />
 
       {/* Channel Breakdown + Top Products */}
       <div className="grid gap-4 md:grid-cols-2">

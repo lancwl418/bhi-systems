@@ -202,6 +202,17 @@ export interface WarrantyComment {
   created_at: string;
 }
 
+export interface DailySalesManualEntry {
+  id: string;
+  sales_date: string;
+  platform: string;
+  model_number: string;
+  quantity: number;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Supplier {
   id: string;
   name: string;

@@ -274,6 +274,7 @@ export async function POST(request: NextRequest) {
     // Insert new orders
     let inserted = 0;
     let errors = 0;
+    const errorMessages: string[] = [];
     const BATCH_SIZE = 200;
 
     for (let i = 0; i < newOrders.length; i += BATCH_SIZE) {
@@ -332,7 +333,7 @@ export async function POST(request: NextRequest) {
           group.lines.forEach((l) => {
             allItems.push({
               order_id: orderId,
-              sku_id: skuMap[l.sku]?.id || null,
+              sku_id: skuMap[l.sku]?.id || "",
               sku_code: l.sku,
               product_name: l.sku,
               quantity: l.quantity,
@@ -350,11 +351,33 @@ export async function POST(request: NextRequest) {
         inserted += insertedOrders.length;
       } catch (err: any) {
         errors += batch.length;
+        if (errorMessages.length < 3) errorMessages.push(err.message);
       }
     }
 
     // Update status & customer for existing orders
     let statusUpdated = 0;
+    let itemsBackfilled = 0;
+    let itemQuantityBackfilled = 0;
+    let itemBackfillErrors = 0;
+    const existingItemQuantityByOrder = new Map<string, Map<string, number>>();
+    const duplicateIds = duplicateOrders
+      .map(([po]) => existingOrderMap.get(po)?.id)
+      .filter((id): id is string => Boolean(id));
+
+    for (let i = 0; i < duplicateIds.length; i += 200) {
+      const batch = duplicateIds.slice(i, i + 200);
+      const { data } = await supabase
+        .from("order_items")
+        .select("order_id, sku_code, quantity")
+        .in("order_id", batch);
+      data?.forEach((item: { order_id: string; sku_code: string; quantity: number }) => {
+        const bySku = existingItemQuantityByOrder.get(item.order_id) ?? new Map<string, number>();
+        bySku.set(item.sku_code, (bySku.get(item.sku_code) ?? 0) + (item.quantity || 0));
+        existingItemQuantityByOrder.set(item.order_id, bySku);
+      });
+    }
+
     for (const [po, group] of duplicateOrders) {
       const existing = existingOrderMap.get(po)!;
       const first = group.lines[0];
@@ -379,6 +402,51 @@ export async function POST(request: NextRequest) {
         .update(updates)
         .eq("id", existing.id);
       if (!error) statusUpdated++;
+
+      const existingBySku = existingItemQuantityByOrder.get(existing.id) ?? new Map<string, number>();
+      const expectedBySku = new Map<string, { sku: string; quantity: number; unitCost: number }>();
+      for (const line of group.lines) {
+        const current = expectedBySku.get(line.sku) ?? {
+          sku: line.sku,
+          quantity: 0,
+          unitCost: line.unitCost,
+        };
+        current.quantity += line.quantity;
+        if (!current.unitCost && line.unitCost) current.unitCost = line.unitCost;
+        expectedBySku.set(line.sku, current);
+      }
+
+      const missingItems = Array.from(expectedBySku.values())
+        .map((l) => ({
+          ...l,
+          quantity: l.quantity - (existingBySku.get(l.sku) ?? 0),
+        }))
+        .filter((l) => l.quantity > 0)
+        .map((l) => ({
+          order_id: existing.id,
+          sku_id: skuMap[l.sku]?.id || "",
+          sku_code: l.sku,
+          product_name: l.sku,
+          quantity: l.quantity,
+          unit_price: l.unitCost,
+          total_price: l.unitCost * l.quantity,
+        }));
+
+      if (missingItems.length > 0) {
+        const { error: itemError } = await supabase.from("order_items").insert(missingItems);
+        if (itemError) {
+          itemBackfillErrors += missingItems.length;
+          if (errorMessages.length < 3) errorMessages.push(itemError.message);
+        } else {
+          itemsBackfilled += missingItems.length;
+          itemQuantityBackfilled += missingItems.reduce((sum, item) => sum + item.quantity, 0);
+          const bySku = existingItemQuantityByOrder.get(existing.id) ?? new Map<string, number>();
+          missingItems.forEach((item) => {
+            bySku.set(item.sku_code, (bySku.get(item.sku_code) ?? 0) + item.quantity);
+          });
+          existingItemQuantityByOrder.set(existing.id, bySku);
+        }
+      }
     }
 
     return NextResponse.json({
@@ -388,7 +456,11 @@ export async function POST(request: NextRequest) {
       inserted,
       skipped: duplicateOrders.length,
       statusUpdated,
+      itemsBackfilled,
+      itemQuantityBackfilled,
+      itemBackfillErrors,
       errors,
+      errorMessages,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
