@@ -22,6 +22,7 @@ import {
   SALES_REPORT_MODELS,
   getDailySalesReport,
 } from "@/lib/sales-report";
+import { SalesReportExportButton } from "./sales-report-export";
 import { SalesReportControls } from "./sales-report-controls";
 
 interface SalesReportProps {
@@ -45,12 +46,21 @@ export async function SalesReport({ salesDate }: SalesReportProps) {
         <CardDescription>
           {report.salesDate} · {report.total.toLocaleString()} units
         </CardDescription>
-        <CardAction>
+        <CardAction className="flex flex-wrap justify-end gap-2">
           <SalesReportControls
             salesDate={report.salesDate}
             manualModels={Array.from(SALES_REPORT_MODELS)}
             manualPlatforms={Array.from(MANUAL_SALES_PLATFORMS)}
             manualQuantities={report.manualQuantities}
+          />
+          <SalesReportExportButton
+            report={{
+              salesDate: report.salesDate,
+              total: report.total,
+              models: report.models,
+              rows: report.rows,
+              modelTotals: report.modelTotals,
+            }}
           />
         </CardAction>
       </CardHeader>
