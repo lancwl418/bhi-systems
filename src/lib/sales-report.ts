@@ -14,13 +14,15 @@ export const MANUAL_SALES_PLATFORMS = [
   "Target",
   "Menards",
   "Global Industrial",
+  RETAILERS.DSCO,
 ] as const;
 
 export const SALES_REPORT_PLATFORMS = [
   MANUAL_SALES_PLATFORMS[0],
   RETAILERS.HOME_DEPOT,
   RETAILERS.LOWES,
-  ...MANUAL_SALES_PLATFORMS.slice(1),
+  ...MANUAL_SALES_PLATFORMS.slice(1, -1),
+  RETAILERS.DSCO,
 ] as const;
 
 const SALES_VARIANT_LABELS: Record<string, string> = {

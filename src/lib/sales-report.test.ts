@@ -44,6 +44,7 @@ describe("normalizeSalesPlatform", () => {
       "Target",
       "Menards",
       "Global Industrial",
+      "DSCO / AAFES",
     ]);
   });
 
