@@ -71,6 +71,8 @@ export const SALES_REPORT_MODELS = [
   "BHI-TWAC-12KR115V",
   "BHI-TWAC-14KR115V",
   "BHI-PC-24A",
+  "BHI-PARTS-BRACKET",
+  "BHI-PARTS-LINESET",
   "BH1-52-YJ823",
   "BH1-52-YJ617",
   "BHI-52-YJ670",
@@ -226,6 +228,8 @@ export function normalizeSalesModel(rawModel: string): string {
   const variant = getVariantLabel(raw);
 
   if (compact.includes("BHI-PC-24A")) return "BHI-PC-24A";
+  if (compact.includes("BHI-PARTS-BRACKET")) return "BHI-PARTS-BRACKET";
+  if (compact.includes("BHI-PARTS-LINESET")) return "BHI-PARTS-LINESET";
 
   const exactWindowOrOther = exactContainsModel(raw);
   if (exactWindowOrOther) return exactWindowOrOther;

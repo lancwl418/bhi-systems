@@ -24,9 +24,11 @@ describe("normalizeSalesModel", () => {
     expect(normalizeSalesModel("APOLLO 12K B")).toBe("APOLLO 12K No Wifi 25ft");
   });
 
-  it("keeps window AC, pump, and fan models as exact report buckets", () => {
+  it("keeps window AC, pump, parts, and fan models as exact report buckets", () => {
     expect(normalizeSalesModel("BHI-TWAC-10KR115V")).toBe("BHI-TWAC-10KR115V");
     expect(normalizeSalesModel("BHI-PC-24A")).toBe("BHI-PC-24A");
+    expect(normalizeSalesModel("BHI-PARTS-BRACKET")).toBe("BHI-PARTS-BRACKET");
+    expect(normalizeSalesModel("BHI-PARTS-LINESET")).toBe("BHI-PARTS-LINESET");
     expect(normalizeSalesModel("BH1-52-YJ823")).toBe("BH1-52-YJ823");
   });
 });
