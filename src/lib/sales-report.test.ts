@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildDailySalesReport, normalizeSalesModel } from "./sales-report";
+import {
+  MANUAL_SALES_PLATFORMS,
+  buildDailySalesReport,
+  normalizeSalesModel,
+  normalizeSalesPlatform,
+} from "./sales-report";
 
 describe("normalizeSalesModel", () => {
   it("normalizes mini split families by series, capacity, wifi, and line set", () => {
@@ -23,6 +28,26 @@ describe("normalizeSalesModel", () => {
     expect(normalizeSalesModel("BHI-TWAC-10KR115V")).toBe("BHI-TWAC-10KR115V");
     expect(normalizeSalesModel("BHI-PC-24A")).toBe("BHI-PC-24A");
     expect(normalizeSalesModel("BH1-52-YJ823")).toBe("BH1-52-YJ823");
+  });
+});
+
+describe("normalizeSalesPlatform", () => {
+  it("keeps the current manual platform list compact", () => {
+    expect(Array.from(MANUAL_SALES_PLATFORMS)).toEqual([
+      "eBay",
+      "Wayfair",
+      "Amazon",
+      "Official",
+      "Target",
+      "Menards",
+      "Global Industrial",
+    ]);
+  });
+
+  it("rolls legacy eBay platform variants into eBay", () => {
+    expect(normalizeSalesPlatform("eBay - Best")).toBe("eBay");
+    expect(normalizeSalesPlatform("eBay - AUX")).toBe("eBay");
+    expect(normalizeSalesPlatform("ebay - deal")).toBe("eBay");
   });
 });
 
@@ -128,5 +153,25 @@ describe("buildDailySalesReport", () => {
     expect(report.manualQuantities.Wayfair["BHI-18K"]).toBe(0);
     expect(wayfair?.total).toBe(0);
     expect(report.total).toBe(0);
+  });
+
+  it("normalizes legacy eBay manual rows and ignores retired manual platforms", () => {
+    const report = buildDailySalesReport({
+      salesDate: "2026-05-21",
+      productModels: ["BHI-12K"],
+      skuCatalog: [],
+      autoItems: [],
+      manualEntries: [
+        { platform: "eBay - Best", model_number: "BHI-12K", quantity: 2 },
+        { platform: "Overstock", model_number: "BHI-12K", quantity: 9 },
+      ],
+    });
+
+    const ebay = report.rows.find((row) => row.platform === "eBay");
+    const overstock = report.rows.find((row) => row.platform === "Overstock");
+
+    expect(ebay?.total).toBe(2);
+    expect(overstock).toBeUndefined();
+    expect(report.total).toBe(2);
   });
 });

@@ -6,6 +6,7 @@ import {
   SALES_REPORT_MODELS,
   type ManualSalesEntryInput,
   normalizeSalesModel,
+  normalizeSalesPlatform,
   normalizeSalesDate,
 } from "@/lib/sales-report";
 
@@ -35,7 +36,7 @@ function normalizeEntries(entries: unknown): ManualSalesEntryInput[] {
   for (const raw of entries) {
     if (!raw || typeof raw !== "object") continue;
     const candidate = raw as Partial<ManualSalesEntryInput>;
-    const platform = cleanText(candidate.platform);
+    const platform = normalizeSalesPlatform(cleanText(candidate.platform));
     const model = normalizeSalesModel(cleanText(candidate.model));
     if (!platform || !model) continue;
     if (!manualPlatformSet.has(platform)) continue;

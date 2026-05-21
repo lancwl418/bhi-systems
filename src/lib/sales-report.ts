@@ -7,28 +7,20 @@ export const AUTO_SALES_PLATFORMS = [
 ] as const;
 
 export const MANUAL_SALES_PLATFORMS = [
-  "eBay - Best",
-  "eBay - AUX",
-  "eBay - Deal",
-  "eBay - Good",
-  "Overstock",
+  "eBay",
   "Wayfair",
-  "New Egg",
   "Amazon",
   "Official",
   "Target",
-  "Walmart",
-  "ShopHQ",
-  "Bed Bath",
-  "Greencoast",
+  "Menards",
   "Global Industrial",
 ] as const;
 
 export const SALES_REPORT_PLATFORMS = [
-  ...MANUAL_SALES_PLATFORMS.slice(0, 5),
+  MANUAL_SALES_PLATFORMS[0],
   RETAILERS.HOME_DEPOT,
   RETAILERS.LOWES,
-  ...MANUAL_SALES_PLATFORMS.slice(5),
+  ...MANUAL_SALES_PLATFORMS.slice(1),
 ] as const;
 
 const SALES_VARIANT_LABELS: Record<string, string> = {
@@ -311,6 +303,16 @@ export function isManualSalesPlatform(platform: string): boolean {
   return !AUTO_SALES_PLATFORMS.includes(platform as (typeof AUTO_SALES_PLATFORMS)[number]);
 }
 
+export function normalizeSalesPlatform(input: string): string {
+  const platform = cleanText(input);
+  if (!platform) return "";
+
+  const lower = platform.toLowerCase();
+  if (lower === "ebay" || lower.startsWith("ebay - ")) return "eBay";
+
+  return normalizeRetailer(platform);
+}
+
 function buildSkuModelMap(skuCatalog: SkuSource[]): Map<string, string> {
   const map = new Map<string, string>();
   for (const sku of skuCatalog) {
@@ -330,7 +332,7 @@ function resolveModel(item: AutoSalesSource, skuModelMap: Map<string, string>): 
 function resolvePlatform(order: OrderSource | null): string {
   const rawRetailer = order?.raw_payload?.retailer;
   const rawPlatform = typeof rawRetailer === "string" ? rawRetailer : order?.channel_source;
-  return normalizeRetailer(cleanText(rawPlatform) || "Unknown");
+  return normalizeSalesPlatform(cleanText(rawPlatform) || "Unknown");
 }
 
 export function buildDailySalesReport(input: BuildDailySalesReportInput): DailySalesReport {
@@ -376,10 +378,13 @@ export function buildDailySalesReport(input: BuildDailySalesReportInput): DailyS
   }
 
   for (const entry of input.manualEntries) {
-    const platform = cleanText(entry.platform);
+    const platform = normalizeSalesPlatform(cleanText(entry.platform));
     const model = normalizeSalesModel(cleanText(entry.model_number));
     const quantity = toQuantity(entry.quantity);
     if (!platform || !model) continue;
+    if (!MANUAL_SALES_PLATFORMS.includes(platform as (typeof MANUAL_SALES_PLATFORMS)[number])) {
+      continue;
+    }
 
     if (!manualQuantities[platform]) manualQuantities[platform] = {};
     manualQuantities[platform][model] = quantity;
