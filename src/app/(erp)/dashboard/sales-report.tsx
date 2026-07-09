@@ -20,35 +20,40 @@ import {
 import {
   MANUAL_SALES_PLATFORMS,
   SALES_REPORT_MODELS,
-  getDailySalesReport,
+  getSalesReport,
+  resolveSalesRange,
+  type SalesRangeParams,
 } from "@/lib/sales-report";
 import { SalesReportExportButton } from "./sales-report-export";
 import { SalesReportControls } from "./sales-report-controls";
 
-interface SalesReportProps {
-  salesDate?: string;
-}
+type SalesReportProps = SalesRangeParams;
 
 function formatCount(value: number): string {
   return value > 0 ? value.toLocaleString() : "";
 }
 
-export async function SalesReport({ salesDate }: SalesReportProps) {
-  const report = await getDailySalesReport(salesDate);
+export async function SalesReport(props: SalesReportProps) {
+  const range = resolveSalesRange(props);
+  const report = await getSalesReport(range);
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <BarChart3 className="h-4 w-4 text-muted-foreground" />
-          Daily Sales Report
+          Sales Report
         </CardTitle>
         <CardDescription>
-          {report.salesDate} · {report.total.toLocaleString()} units
+          {report.rangeLabel} · {report.total.toLocaleString()} units
         </CardDescription>
         <CardAction className="flex flex-wrap justify-end gap-2">
           <SalesReportControls
+            mode={report.mode}
             salesDate={report.salesDate}
+            salesMonth={report.from.slice(0, 7)}
+            salesFrom={report.from}
+            salesTo={report.to}
             manualModels={Array.from(SALES_REPORT_MODELS)}
             manualPlatforms={Array.from(MANUAL_SALES_PLATFORMS)}
             manualQuantities={report.manualQuantities}
@@ -56,6 +61,7 @@ export async function SalesReport({ salesDate }: SalesReportProps) {
           <SalesReportExportButton
             report={{
               salesDate: report.salesDate,
+              rangeLabel: report.rangeLabel,
               total: report.total,
               models: report.models,
               rows: report.rows,

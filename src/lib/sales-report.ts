@@ -99,8 +99,29 @@ export interface SalesReportRow {
   total: number;
 }
 
+export type SalesReportMode = "daily" | "monthly" | "custom";
+
+export interface SalesReportRange {
+  mode: SalesReportMode;
+  from: string; // inclusive, YYYY-MM-DD
+  to: string; // inclusive, YYYY-MM-DD
+  label: string;
+}
+
+export interface SalesRangeParams {
+  salesMode?: string | null;
+  salesDate?: string | null;
+  salesMonth?: string | null; // YYYY-MM
+  salesFrom?: string | null;
+  salesTo?: string | null;
+}
+
 export interface DailySalesReport {
   salesDate: string;
+  from: string;
+  to: string;
+  mode: SalesReportMode;
+  rangeLabel: string;
   models: string[];
   rows: SalesReportRow[];
   modelTotals: SalesReportCell[];
@@ -162,6 +183,10 @@ interface OrderRowSource extends OrderSource {
 
 interface BuildDailySalesReportInput {
   salesDate: string;
+  from?: string;
+  to?: string;
+  mode?: SalesReportMode;
+  rangeLabel?: string;
   productModels: string[];
   skuCatalog: SkuSource[];
   autoItems: AutoSalesSource[];
@@ -307,6 +332,52 @@ export function normalizeSalesDate(input?: string | null): string {
   return getTodayInSalesTimeZone();
 }
 
+function isValidMonth(value: string): boolean {
+  return /^\d{4}-\d{2}$/.test(value);
+}
+
+/** First and last calendar day (inclusive) of a "YYYY-MM" month. */
+function monthBounds(month: string): { from: string; to: string } {
+  const [year, monthIndex] = month.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(year, monthIndex, 0)).getUTCDate();
+  return { from: `${month}-01`, to: `${month}-${String(lastDay).padStart(2, "0")}` };
+}
+
+function formatMonthLabel(month: string): string {
+  const [year, monthIndex] = month.split("-").map(Number);
+  const name = new Intl.DateTimeFormat("en-US", { month: "long", timeZone: "UTC" })
+    .format(new Date(Date.UTC(year, monthIndex - 1, 1)));
+  return `${name} ${year}`;
+}
+
+/**
+ * Resolve the dashboard sales-report date controls into an inclusive [from, to]
+ * range. Defaults to a single day (today in the sales timezone) when nothing is set.
+ */
+export function resolveSalesRange(params: SalesRangeParams): SalesReportRange {
+  const mode = cleanText(params.salesMode);
+
+  if (mode === "monthly") {
+    const month = isValidMonth(cleanText(params.salesMonth))
+      ? cleanText(params.salesMonth)
+      : getTodayInSalesTimeZone().slice(0, 7);
+    const { from, to } = monthBounds(month);
+    return { mode: "monthly", from, to, label: formatMonthLabel(month) };
+  }
+
+  if (mode === "custom") {
+    let from = normalizeSalesDate(params.salesFrom);
+    let to = /^\d{4}-\d{2}-\d{2}$/.test(cleanText(params.salesTo))
+      ? cleanText(params.salesTo)
+      : from;
+    if (to < from) [from, to] = [to, from];
+    return { mode: "custom", from, to, label: from === to ? from : `${from} – ${to}` };
+  }
+
+  const date = normalizeSalesDate(params.salesDate);
+  return { mode: "daily", from: date, to: date, label: date };
+}
+
 export function getTodayInSalesTimeZone(date = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: SALES_REPORT_TIME_ZONE,
@@ -409,7 +480,8 @@ export function buildDailySalesReport(input: BuildDailySalesReportInput): DailyS
     }
 
     if (!manualQuantities[platform]) manualQuantities[platform] = {};
-    manualQuantities[platform][model] = quantity;
+    // Sum across the range; for a single day this is just the day's quantity.
+    manualQuantities[platform][model] = (manualQuantities[platform][model] ?? 0) + quantity;
 
     if (!quantity) {
       modelSet.add(model);
@@ -465,6 +537,10 @@ export function buildDailySalesReport(input: BuildDailySalesReportInput): DailyS
 
   return {
     salesDate: input.salesDate,
+    from: input.from ?? input.salesDate,
+    to: input.to ?? input.salesDate,
+    mode: input.mode ?? "daily",
+    rangeLabel: input.rangeLabel ?? input.salesDate,
     models,
     rows,
     modelTotals,
@@ -477,7 +553,12 @@ export function buildDailySalesReport(input: BuildDailySalesReportInput): DailyS
 
 export async function getDailySalesReport(salesDateInput?: string | null): Promise<DailySalesReport> {
   const salesDate = normalizeSalesDate(salesDateInput);
-  const nextDate = getNextDate(salesDate);
+  return getSalesReport({ mode: "daily", from: salesDate, to: salesDate, label: salesDate });
+}
+
+export async function getSalesReport(range: SalesReportRange): Promise<DailySalesReport> {
+  const { from, to, mode, label } = range;
+  const afterTo = getNextDate(to);
   const supabase = await createServiceSupabase();
 
   const [productResult, skuResult, orderResult, manualResult] = await Promise.all([
@@ -493,12 +574,13 @@ export async function getDailySalesReport(salesDateInput?: string | null): Promi
     supabase
       .from("orders")
       .select("id, status, raw_payload, channel_source, order_date")
-      .gte("order_date", `${salesDate}T00:00:00+00:00`)
-      .lt("order_date", `${nextDate}T00:00:00+00:00`),
+      .gte("order_date", `${from}T00:00:00+00:00`)
+      .lt("order_date", `${afterTo}T00:00:00+00:00`),
     supabase
       .from("daily_sales_manual_entries")
       .select("platform, model_number, quantity")
-      .eq("sales_date", salesDate),
+      .gte("sales_date", from)
+      .lte("sales_date", to),
   ]);
 
   if (productResult.error) throw productResult.error;
@@ -575,7 +657,11 @@ export async function getDailySalesReport(salesDateInput?: string | null): Promi
   }
 
   return buildDailySalesReport({
-    salesDate,
+    salesDate: from,
+    from,
+    to,
+    mode,
+    rangeLabel: label,
     productModels: uniqueClean(
       (productResult.data ?? []).map((product: ProductModelSource) => product.model_number ?? "")
     ),

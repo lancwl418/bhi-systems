@@ -17,7 +17,16 @@ import { normalizeRetailer } from "@/lib/retailers";
 import { SalesReport } from "./sales-report";
 
 interface Props {
-  searchParams: Promise<{ period?: string; from?: string; to?: string; salesDate?: string }>;
+  searchParams: Promise<{
+    period?: string;
+    from?: string;
+    to?: string;
+    salesDate?: string;
+    salesMode?: string;
+    salesMonth?: string;
+    salesFrom?: string;
+    salesTo?: string;
+  }>;
 }
 
 function resolveDateRange(params: { period?: string; from?: string; to?: string }): { from: string | null; to: string | null; label: string } {
@@ -315,7 +324,13 @@ export default async function DashboardPage({ searchParams }: Props) {
         </Card>
       </div>
 
-      <SalesReport salesDate={params.salesDate} />
+      <SalesReport
+        salesMode={params.salesMode}
+        salesDate={params.salesDate}
+        salesMonth={params.salesMonth}
+        salesFrom={params.salesFrom}
+        salesTo={params.salesTo}
+      />
 
       {/* Channel Breakdown + Top Products */}
       <div className="grid gap-4 md:grid-cols-2">

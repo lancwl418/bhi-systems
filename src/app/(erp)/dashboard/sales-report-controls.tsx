@@ -30,8 +30,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+type SalesReportMode = "daily" | "monthly" | "custom";
+
 interface SalesReportControlsProps {
+  mode: SalesReportMode;
   salesDate: string;
+  salesMonth: string;
+  salesFrom: string;
+  salesTo: string;
   manualModels: string[];
   manualPlatforms: string[];
   manualQuantities: Record<string, Record<string, number>>;
@@ -81,7 +87,11 @@ function getInitialRows(
 }
 
 export function SalesReportControls({
+  mode,
   salesDate,
+  salesMonth,
+  salesFrom,
+  salesTo,
   manualModels,
   manualPlatforms,
   manualQuantities,
@@ -110,12 +120,29 @@ export function SalesReportControls({
     [rows]
   );
 
-  const setSalesDate = (value: string) => {
+  // Only these params belong to the sales report; switching mode clears the others
+  // so a stale value from another mode never leaks into the resolved range.
+  const SALES_PARAMS = ["salesMode", "salesDate", "salesMonth", "salesFrom", "salesTo"];
+
+  const applyParams = (updates: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
-    if (value) params.set("salesDate", value);
-    else params.delete("salesDate");
+    for (const [key, value] of Object.entries(updates)) {
+      if (value) params.set(key, value);
+      else params.delete(key);
+    }
     const qs = params.toString();
     router.push(`${pathname}${qs ? `?${qs}` : ""}`);
+  };
+
+  const clearedSalesParams = () =>
+    Object.fromEntries(SALES_PARAMS.map((key) => [key, null])) as Record<string, string | null>;
+
+  const setMode = (next: SalesReportMode) => {
+    if (next === mode) return;
+    const base = clearedSalesParams();
+    if (next === "daily") applyParams({ ...base, salesMode: "daily", salesDate });
+    else if (next === "monthly") applyParams({ ...base, salesMode: "monthly", salesMonth });
+    else applyParams({ ...base, salesMode: "custom", salesFrom, salesTo });
   };
 
   const updateRow = (id: string, updates: Partial<ManualEntryRow>) => {
@@ -176,20 +203,73 @@ export function SalesReportControls({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Input
-        type="date"
-        value={salesDate}
-        onChange={(event) => setSalesDate(event.target.value)}
-        className="w-[150px]"
-      />
-      <Button
-        variant="outline"
-        onClick={() => setOpen(true)}
-        disabled={!hasModels}
-      >
-        <Pencil className="h-4 w-4" />
-        Manual Entry
-      </Button>
+      <Select value={mode} onValueChange={(value) => setMode(value as SalesReportMode)}>
+        <SelectTrigger className="w-[120px]">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="daily">Daily</SelectItem>
+          <SelectItem value="monthly">Monthly</SelectItem>
+          <SelectItem value="custom">Custom dates</SelectItem>
+        </SelectContent>
+      </Select>
+
+      {mode === "daily" && (
+        <Input
+          type="date"
+          value={salesDate}
+          onChange={(event) =>
+            applyParams({ salesMode: "daily", salesDate: event.target.value })
+          }
+          className="w-[150px]"
+        />
+      )}
+
+      {mode === "monthly" && (
+        <Input
+          type="month"
+          value={salesMonth}
+          onChange={(event) =>
+            applyParams({ salesMode: "monthly", salesMonth: event.target.value })
+          }
+          className="w-[150px]"
+        />
+      )}
+
+      {mode === "custom" && (
+        <div className="flex items-center gap-1">
+          <Input
+            type="date"
+            value={salesFrom}
+            max={salesTo || undefined}
+            onChange={(event) =>
+              applyParams({ salesMode: "custom", salesFrom: event.target.value })
+            }
+            className="w-[150px]"
+          />
+          <span className="text-sm text-muted-foreground">–</span>
+          <Input
+            type="date"
+            value={salesTo}
+            min={salesFrom || undefined}
+            onChange={(event) =>
+              applyParams({ salesMode: "custom", salesTo: event.target.value })
+            }
+            className="w-[150px]"
+          />
+        </div>
+      )}
+
+      {mode === "daily" && (
+        <Button
+          variant="outline"
+          onClick={() => setOpen(true)}
+          disabled={!hasModels}
+        >
+          <Pencil className="h-4 w-4" />
+          Manual Entry
+        </Button>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-3xl">

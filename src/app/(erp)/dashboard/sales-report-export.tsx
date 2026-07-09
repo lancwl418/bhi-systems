@@ -20,6 +20,7 @@ interface SalesReportExportRow {
 
 export interface SalesReportExportData {
   salesDate: string;
+  rangeLabel: string;
   total: number;
   models: string[];
   rows: SalesReportExportRow[];
@@ -198,11 +199,11 @@ function drawSalesReportCanvas(report: SalesReportExportData): HTMLCanvasElement
   ctx.font = "700 22px Arial, sans-serif";
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
-  ctx.fillText("Daily Sales Report", padding, padding);
+  ctx.fillText("Sales Report", padding, padding);
 
   ctx.fillStyle = "#6b7280";
   ctx.font = "13px Arial, sans-serif";
-  ctx.fillText(`${report.salesDate} · ${report.total.toLocaleString()} units · non-zero rows and columns`, padding, padding + 31);
+  ctx.fillText(`${report.rangeLabel} · ${report.total.toLocaleString()} units · non-zero rows and columns`, padding, padding + 31);
 
   let x = padding;
   let y = padding + titleHeight;
@@ -312,9 +313,10 @@ export function SalesReportExportButton({ report }: SalesReportExportButtonProps
       const canvas = drawSalesReportCanvas(compactReport(report));
       const blob = await canvasToBlob(canvas);
       const url = URL.createObjectURL(blob);
+      const slug = report.rangeLabel.replace(/[^0-9A-Za-z]+/g, "-").replace(/^-+|-+$/g, "") || report.salesDate;
       const link = document.createElement("a");
       link.href = url;
-      link.download = `daily-sales-report-${report.salesDate}-compact.png`;
+      link.download = `sales-report-${slug}-compact.png`;
       document.body.appendChild(link);
       link.click();
       link.remove();
