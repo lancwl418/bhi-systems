@@ -12,6 +12,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { createServiceSupabase } from "@/lib/supabase/server";
 import Link from "next/link";
+import { Search } from "lucide-react";
 import { OrderFilters } from "./filters";
 import { ImportCSV } from "./import-csv";
 import { ImportPDF } from "./import-pdf";
@@ -89,6 +90,13 @@ export default async function OrdersPage({ searchParams }: Props) {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Link
+            href="/orders/by-model"
+            className="inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent"
+          >
+            <Search className="h-4 w-4" />
+            Search by Model
+          </Link>
           <ImportOrderStream />
           <ImportPDF />
           <ImportCSV />
