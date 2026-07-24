@@ -18,10 +18,13 @@ export interface ModelSearchExportRow {
   customerName: string;
   customerEmail: string;
   customerPhone: string;
-  shipAddress: string;
+  shipAddress1: string;
+  shipAddress2: string;
+  shipAddress3: string;
   shipCity: string;
   shipState: string;
   shipZip: string;
+  shipCountry: string;
 }
 
 const HEADERS: { key: keyof ModelSearchExportRow; label: string }[] = [
@@ -39,10 +42,13 @@ const HEADERS: { key: keyof ModelSearchExportRow; label: string }[] = [
   { key: "customerName", label: "Customer Name" },
   { key: "customerEmail", label: "Customer Email" },
   { key: "customerPhone", label: "Customer Phone" },
-  { key: "shipAddress", label: "Ship Address" },
+  { key: "shipAddress1", label: "Ship Address 1" },
+  { key: "shipAddress2", label: "Ship Address 2" },
+  { key: "shipAddress3", label: "Ship Address 3" },
   { key: "shipCity", label: "Ship City" },
   { key: "shipState", label: "Ship State" },
   { key: "shipZip", label: "Ship Zip" },
+  { key: "shipCountry", label: "Ship Country" },
 ];
 
 function csvCell(value: unknown): string {

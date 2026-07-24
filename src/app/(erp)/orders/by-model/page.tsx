@@ -103,10 +103,13 @@ async function searchOrdersByModel(rawModel: string) {
         customerName: customer?.name || raw.customer_name || "",
         customerEmail: customer?.email || raw.customer_email || "",
         customerPhone: customer?.phone || raw.customer_phone || "",
-        shipAddress: ship.line1 || ship.address1 || "",
+        shipAddress1: ship.line1 || ship.address1 || "",
+        shipAddress2: ship.line2 || ship.address2 || "",
+        shipAddress3: ship.line3 || ship.address3 || "",
         shipCity: ship.city || "",
         shipState: ship.state || "",
-        shipZip: ship.zip || "",
+        shipZip: ship.zip || ship.postal_code || "",
+        shipCountry: ship.country || "",
         orderId: order.id,
       };
     })
@@ -166,12 +169,13 @@ export default async function OrdersByModelPage({ searchParams }: Props) {
                 <TableHead>Order Date</TableHead>
                 <TableHead>Customer</TableHead>
                 <TableHead>Email / Phone</TableHead>
+                <TableHead>Ship To</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground py-12">
+                  <TableCell colSpan={9} className="text-center text-muted-foreground py-12">
                     {model ? "No orders found for this model number." : "Enter a model number to search."}
                   </TableCell>
                 </TableRow>
@@ -210,6 +214,20 @@ export default async function OrdersByModelPage({ searchParams }: Props) {
                         {row.customerEmail && <span className="block">{row.customerEmail}</span>}
                         {row.customerPhone && <span className="block">{row.customerPhone}</span>}
                         {!row.customerEmail && !row.customerPhone && "—"}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {row.shipAddress1 && <span className="block">{row.shipAddress1}</span>}
+                        {row.shipAddress2 && <span className="block">{row.shipAddress2}</span>}
+                        {row.shipAddress3 && <span className="block">{row.shipAddress3}</span>}
+                        {(row.shipCity || row.shipState || row.shipZip) && (
+                          <span className="block">
+                            {[row.shipCity, row.shipState].filter(Boolean).join(", ")} {row.shipZip}
+                          </span>
+                        )}
+                        {row.shipCountry && row.shipCountry !== "US" && (
+                          <span className="block">{row.shipCountry}</span>
+                        )}
+                        {!row.shipAddress1 && !row.shipCity && "—"}
                       </TableCell>
                     </TableRow>
                   );
