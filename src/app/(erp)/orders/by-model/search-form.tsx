@@ -19,7 +19,7 @@ export function ModelSearchForm({ initialQuery }: { initialQuery: string }) {
   return (
     <form onSubmit={submit} className="flex items-center gap-2">
       <Input
-        placeholder="Model / SKU or customer name (e.g. BHI-TWAC-12KR115V or John Smith)"
+        placeholder="Search anything — model, customer, PO, tracking, address…"
         value={value}
         onChange={(e) => setValue(e.target.value)}
         className="w-96"

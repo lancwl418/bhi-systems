@@ -66,14 +66,16 @@ async function searchOrders(rawTerm: string) {
   const items = (itemData ?? []) as MatchedItem[];
   const itemOrderIds = new Set(items.map((i) => i.order_id));
 
-  // Path B: orders whose customer name matches the keyword — via the customers
-  // table (orders.customer_id) and the raw_payload.customer_name fallback.
-  const customerOrderIds = new Set<string>();
+  // The keyword also matches anywhere on the order itself. Collect those order
+  // ids from two sources.
+  const orderMatchIds = new Set<string>();
 
+  // Path B: the related customer record (name / email / phone), reached through
+  // orders.customer_id.
   const { data: custRows, error: custError } = await supabase
     .from("customers")
     .select("id")
-    .ilike("name", `%${term}%`)
+    .or(`name.ilike.%${term}%,email.ilike.%${term}%,phone.ilike.%${term}%`)
     .limit(ITEM_LIMIT);
   if (custError) throw custError;
   const custIds = (custRows ?? []).map((c) => c.id as string);
@@ -84,20 +86,49 @@ async function searchOrders(rawTerm: string) {
       .in("customer_id", custIds.slice(i, i + 200))
       .limit(ITEM_LIMIT);
     if (error) throw error;
-    for (const o of data ?? []) customerOrderIds.add(o.id);
+    for (const o of data ?? []) orderMatchIds.add(o.id);
   }
 
-  const { data: rawMatch, error: rawError } = await supabase
+  // Path C: any text field on the order itself — PO / tracking / carrier / notes,
+  // the shipping address, and the raw_payload customer fields.
+  const orderTextFilter = [
+    "channel_order_id",
+    "tracking_number",
+    "carrier",
+    "notes",
+    "buyer_id",
+    "shipping_address->>name",
+    "shipping_address->>company",
+    "shipping_address->>line1",
+    "shipping_address->>address1",
+    "shipping_address->>line2",
+    "shipping_address->>address2",
+    "shipping_address->>line3",
+    "shipping_address->>address3",
+    "shipping_address->>city",
+    "shipping_address->>state",
+    "shipping_address->>zip",
+    "shipping_address->>postal_code",
+    "shipping_address->>country",
+    "raw_payload->>customer_name",
+    "raw_payload->>customer_email",
+    "raw_payload->>customer_phone",
+    "raw_payload->>consumer_order",
+    "raw_payload->>retailer",
+  ]
+    .map((col) => `${col}.ilike.%${term}%`)
+    .join(",");
+  const { data: orderMatches, error: orderMatchError } = await supabase
     .from("orders")
     .select("id")
-    .ilike("raw_payload->>customer_name", `%${term}%`)
+    .or(orderTextFilter)
     .limit(ITEM_LIMIT);
-  if (rawError) throw rawError;
-  for (const o of rawMatch ?? []) customerOrderIds.add(o.id);
+  if (orderMatchError) throw orderMatchError;
+  for (const o of orderMatches ?? []) orderMatchIds.add(o.id);
 
-  // Load every line of customer-matched orders not already surfaced by path A
+  // Load every line of order-level matches not already surfaced by path A
   // (no specific line matched, so show the whole order).
-  const extraOrderIds = [...customerOrderIds].filter((id) => !itemOrderIds.has(id));
+  const extraOrderIds = [...orderMatchIds].filter((id) => !itemOrderIds.has(id));
   for (let i = 0; i < extraOrderIds.length; i += 200) {
     const { data, error } = await supabase
       .from("order_items")
@@ -184,7 +215,7 @@ export default async function OrdersByModelPage({ searchParams }: Props) {
           <p className="text-sm text-muted-foreground mt-1">
             {query
               ? `${orderCount.toLocaleString()} order(s) · ${rows.length.toLocaleString()} matching line(s) for "${query}"`
-              : "Search orders by model number / SKU or customer name, and export the results with customer info."}
+              : "Search anything on an order — model / SKU, customer, PO, tracking, or address — and export the results."}
           </p>
         </div>
       </div>
@@ -220,7 +251,7 @@ export default async function OrdersByModelPage({ searchParams }: Props) {
               {rows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={9} className="text-center text-muted-foreground py-12">
-                    {query ? "No orders found for this keyword." : "Enter a model number or customer name to search."}
+                    {query ? "No orders found for this keyword." : "Enter a keyword — model, customer, PO, tracking, or address."}
                   </TableCell>
                 </TableRow>
               ) : (
