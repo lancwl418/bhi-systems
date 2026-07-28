@@ -58,10 +58,10 @@ function csvCell(value: unknown): string {
 
 export function ModelSearchExportButton({
   rows,
-  model,
+  keyword,
 }: {
   rows: ModelSearchExportRow[];
-  model: string;
+  keyword: string;
 }) {
   const exportCsv = () => {
     const lines = [
@@ -73,10 +73,10 @@ export function ModelSearchExportButton({
       type: "text/csv;charset=utf-8",
     });
     const url = URL.createObjectURL(blob);
-    const slug = model.replace(/[^0-9A-Za-z]+/g, "-").replace(/^-+|-+$/g, "") || "all";
+    const slug = keyword.replace(/[^0-9A-Za-z]+/g, "-").replace(/^-+|-+$/g, "") || "all";
     const link = document.createElement("a");
     link.href = url;
-    link.download = `orders-by-model-${slug}.csv`;
+    link.download = `orders-search-${slug}.csv`;
     document.body.appendChild(link);
     link.click();
     link.remove();

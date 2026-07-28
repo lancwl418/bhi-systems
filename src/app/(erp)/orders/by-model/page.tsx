@@ -17,7 +17,7 @@ import { ModelSearchForm } from "./search-form";
 import { ModelSearchExportButton, type ModelSearchExportRow } from "./export-button";
 
 interface Props {
-  searchParams: Promise<{ model?: string }>;
+  searchParams: Promise<{ q?: string; model?: string }>;
 }
 
 const statusColors: Record<string, string> = {
@@ -43,26 +43,70 @@ interface MatchedItem {
   total_price: number | null;
 }
 
-// PostgREST `.or()` treats commas/parens as syntax; model numbers never contain
-// them, so strip to keep the filter well-formed.
+// PostgREST `.or()` / `.ilike()` treat commas/parens/asterisks as syntax; strip
+// them so the keyword (model number or customer name) keeps the filter well-formed.
 function sanitizeTerm(raw: string): string {
   return raw.replace(/[,()*]/g, " ").trim();
 }
 
-async function searchOrdersByModel(rawModel: string) {
-  const model = sanitizeTerm(rawModel);
-  if (!model) return { rows: [] as ModelSearchRow[], orderCount: 0, truncated: false };
+async function searchOrders(rawTerm: string) {
+  const term = sanitizeTerm(rawTerm);
+  if (!term) return { rows: [] as ModelSearchRow[], orderCount: 0, truncated: false };
 
   const supabase = await createServiceSupabase();
 
+  // Path A: line items whose SKU / model or product name matches the keyword.
   const { data: itemData, error: itemError } = await supabase
     .from("order_items")
     .select("order_id, sku_code, product_name, quantity, unit_price, total_price")
-    .or(`sku_code.ilike.%${model}%,product_name.ilike.%${model}%`)
+    .or(`sku_code.ilike.%${term}%,product_name.ilike.%${term}%`)
     .limit(ITEM_LIMIT);
   if (itemError) throw itemError;
 
   const items = (itemData ?? []) as MatchedItem[];
+  const itemOrderIds = new Set(items.map((i) => i.order_id));
+
+  // Path B: orders whose customer name matches the keyword — via the customers
+  // table (orders.customer_id) and the raw_payload.customer_name fallback.
+  const customerOrderIds = new Set<string>();
+
+  const { data: custRows, error: custError } = await supabase
+    .from("customers")
+    .select("id")
+    .ilike("name", `%${term}%`)
+    .limit(ITEM_LIMIT);
+  if (custError) throw custError;
+  const custIds = (custRows ?? []).map((c) => c.id as string);
+  for (let i = 0; i < custIds.length; i += 200) {
+    const { data, error } = await supabase
+      .from("orders")
+      .select("id")
+      .in("customer_id", custIds.slice(i, i + 200))
+      .limit(ITEM_LIMIT);
+    if (error) throw error;
+    for (const o of data ?? []) customerOrderIds.add(o.id);
+  }
+
+  const { data: rawMatch, error: rawError } = await supabase
+    .from("orders")
+    .select("id")
+    .ilike("raw_payload->>customer_name", `%${term}%`)
+    .limit(ITEM_LIMIT);
+  if (rawError) throw rawError;
+  for (const o of rawMatch ?? []) customerOrderIds.add(o.id);
+
+  // Load every line of customer-matched orders not already surfaced by path A
+  // (no specific line matched, so show the whole order).
+  const extraOrderIds = [...customerOrderIds].filter((id) => !itemOrderIds.has(id));
+  for (let i = 0; i < extraOrderIds.length; i += 200) {
+    const { data, error } = await supabase
+      .from("order_items")
+      .select("order_id, sku_code, product_name, quantity, unit_price, total_price")
+      .in("order_id", extraOrderIds.slice(i, i + 200));
+    if (error) throw error;
+    items.push(...((data ?? []) as MatchedItem[]));
+  }
+
   const orderIds = [...new Set(items.map((i) => i.order_id))];
   if (orderIds.length === 0) {
     return { rows: [] as ModelSearchRow[], orderCount: 0, truncated: false };
@@ -121,9 +165,9 @@ async function searchOrdersByModel(rawModel: string) {
 
 export default async function OrdersByModelPage({ searchParams }: Props) {
   const params = await searchParams;
-  const model = (params.model ?? "").trim();
-  const { rows, orderCount, truncated } = model
-    ? await searchOrdersByModel(model)
+  const query = (params.q ?? params.model ?? "").trim();
+  const { rows, orderCount, truncated } = query
+    ? await searchOrders(query)
     : { rows: [] as ModelSearchRow[], orderCount: 0, truncated: false };
 
   return (
@@ -136,23 +180,23 @@ export default async function OrdersByModelPage({ searchParams }: Props) {
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div className="flex-1">
-          <h2 className="text-2xl font-bold">Search Orders by Model</h2>
+          <h2 className="text-2xl font-bold">Search Orders</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            {model
-              ? `${orderCount.toLocaleString()} order(s) · ${rows.length.toLocaleString()} matching line(s) for "${model}"`
-              : "Find every order containing a model number and export the results with customer info."}
+            {query
+              ? `${orderCount.toLocaleString()} order(s) · ${rows.length.toLocaleString()} matching line(s) for "${query}"`
+              : "Search orders by model number / SKU or customer name, and export the results with customer info."}
           </p>
         </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <ModelSearchForm initialModel={model} />
-        <ModelSearchExportButton rows={rows} model={model} />
+        <ModelSearchForm initialQuery={query} />
+        <ModelSearchExportButton rows={rows} keyword={query} />
       </div>
 
       {truncated && (
         <p className="text-sm text-orange-600">
-          Showing the first {ITEM_LIMIT.toLocaleString()} matching lines. Refine the model number to narrow results.
+          Showing the first {ITEM_LIMIT.toLocaleString()} matching lines. Refine the keyword to narrow results.
         </p>
       )}
 
@@ -176,7 +220,7 @@ export default async function OrdersByModelPage({ searchParams }: Props) {
               {rows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={9} className="text-center text-muted-foreground py-12">
-                    {model ? "No orders found for this model number." : "Enter a model number to search."}
+                    {query ? "No orders found for this keyword." : "Enter a model number or customer name to search."}
                   </TableCell>
                 </TableRow>
               ) : (
