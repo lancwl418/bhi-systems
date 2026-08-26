@@ -96,6 +96,10 @@ export interface Order {
   customer_id: string;
   status: OrderStatus;
   order_date: string;
+  /** When the order was downloaded/processed from the channel feed (OrderStream "Download Date/Time"). Optional on write. */
+  download_date?: string | null;
+  /** Calendar day the order counts toward in sales reports: download day, else order day. Maintained by DB trigger. */
+  report_date?: string;
   ship_by_date: string | null;
   shipping_address: Address;
   shipping_method: string | null;

@@ -310,13 +310,6 @@ function emptyCell(model: string): SalesReportCell {
   return { model, auto: 0, manual: 0, total: 0 };
 }
 
-function getNextDate(date: string): string {
-  const [year, month, day] = date.split("-").map(Number);
-  const dt = new Date(Date.UTC(year, month - 1, day));
-  dt.setUTCDate(dt.getUTCDate() + 1);
-  return dt.toISOString().slice(0, 10);
-}
-
 function isMissingTableError(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false;
   return (
@@ -558,7 +551,6 @@ export async function getDailySalesReport(salesDateInput?: string | null): Promi
 
 export async function getSalesReport(range: SalesReportRange): Promise<DailySalesReport> {
   const { from, to, mode, label } = range;
-  const afterTo = getNextDate(to);
   const supabase = await createServiceSupabase();
 
   const [productResult, skuResult, orderResult, manualResult] = await Promise.all([
@@ -573,9 +565,12 @@ export async function getSalesReport(range: SalesReportRange): Promise<DailySale
       .select("sku_code, products(model_number)"),
     supabase
       .from("orders")
-      .select("id, status, raw_payload, channel_source, order_date")
-      .gte("order_date", `${from}T00:00:00+00:00`)
-      .lt("order_date", `${afterTo}T00:00:00+00:00`),
+      // Bucket by report_date (download/processing day, falling back to order
+      // date) so an order downloaded the day after it was placed counts on the
+      // day we actually processed it.
+      .select("id, status, raw_payload, channel_source, order_date, report_date")
+      .gte("report_date", from)
+      .lte("report_date", to),
     supabase
       .from("daily_sales_manual_entries")
       .select("platform, model_number, quantity")

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceSupabase } from "@/lib/supabase/server";
 import { normalizePO } from "@/lib/po";
 import { normalizeRetailer } from "@/lib/retailers";
+import { parseOrderStreamDateTime } from "@/lib/orderstream-dates";
 
 export const maxDuration = 300;
 
@@ -95,6 +96,7 @@ export async function POST(request: NextRequest) {
     interface LineItem {
       merchant: string;
       orderDate: string | null;
+      downloadDate: string | null;
       po: string;
       quantity: number;
       sku: string;
@@ -124,6 +126,7 @@ export async function POST(request: NextRequest) {
       allLines.push({
         merchant,
         orderDate: parseDate(c[col["Order Date"]]),
+        downloadDate: parseOrderStreamDateTime(c[col["Download Date/Time"]]),
         po: normalizePO(rawPO, merchant),
         quantity: parseInt(c[col["Quantity"]]) || 1,
         sku: clean(c[col["Vendor SKU"]]) || "",
@@ -300,6 +303,7 @@ export async function POST(request: NextRequest) {
             customer_id: customerIds[po] || null,
             status: mapStatus(first.status) as any,
             order_date: first.orderDate,
+            download_date: first.downloadDate,
             subtotal,
             shipping_cost: shipping,
             tax: 0,
@@ -396,6 +400,8 @@ export async function POST(request: NextRequest) {
       };
       if (customerId) updates.customer_id = customerId;
       if (existing.status !== newStatus) updates.status = newStatus;
+      // Backfill the download timestamp on orders imported before we tracked it.
+      if (first.downloadDate) updates.download_date = first.downloadDate;
 
       const { error } = await supabase
         .from("orders")
