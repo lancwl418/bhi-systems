@@ -34,7 +34,9 @@ export async function updateSession(request: NextRequest) {
     !user &&
     !request.nextUrl.pathname.startsWith("/login") &&
     !request.nextUrl.pathname.startsWith("/api/webhooks") &&
-    !request.nextUrl.pathname.startsWith("/api/orders/import")
+    !request.nextUrl.pathname.startsWith("/api/orders/import") &&
+    // External support API authenticates with its own bearer token in-route
+    !request.nextUrl.pathname.startsWith("/api/v1/")
   ) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
