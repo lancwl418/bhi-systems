@@ -167,8 +167,8 @@ function drawLeftText(
 }
 
 function drawSalesReportCanvas(report: SalesReportExportData): HTMLCanvasElement {
-  const platformWidth = 210;
-  const modelWidth = 152;
+  const modelColWidth = 210;
+  const platformColWidth = 152;
   const subtotalWidth = 124;
   const padding = 24;
   const titleHeight = 58;
@@ -176,8 +176,8 @@ function drawSalesReportCanvas(report: SalesReportExportData): HTMLCanvasElement
   const rowHeight = 42;
   const footerHeight = 44;
 
-  const tableWidth = platformWidth + report.models.length * modelWidth + subtotalWidth;
-  const tableHeight = headerHeight + report.rows.length * rowHeight + footerHeight;
+  const tableWidth = modelColWidth + report.rows.length * platformColWidth + subtotalWidth;
+  const tableHeight = headerHeight + report.models.length * rowHeight + footerHeight;
   const width = padding * 2 + tableWidth;
   const height = padding * 2 + titleHeight + tableHeight;
   const scale = Math.max(2, Math.min(window.devicePixelRatio || 3, 3));
@@ -208,19 +208,24 @@ function drawSalesReportCanvas(report: SalesReportExportData): HTMLCanvasElement
   let x = padding;
   let y = padding + titleHeight;
 
-  drawRect(ctx, x, y, platformWidth, headerHeight, "#f3f4f6");
-  drawLeftText(ctx, "Platform", x, y, platformWidth, headerHeight, {
+  drawRect(ctx, x, y, modelColWidth, headerHeight, "#f3f4f6");
+  drawLeftText(ctx, "Model", x, y, modelColWidth, headerHeight, {
     font: "700 13px Arial, sans-serif",
   });
-  x += platformWidth;
+  x += modelColWidth;
 
-  for (const model of report.models) {
-    drawRect(ctx, x, y, modelWidth, headerHeight, "#f3f4f6");
-    drawCenteredText(ctx, model, x, y, modelWidth, headerHeight, {
+  for (const row of report.rows) {
+    drawRect(ctx, x, y, platformColWidth, headerHeight, "#f3f4f6");
+    drawCenteredText(ctx, row.platform, x, y - 7, platformColWidth, headerHeight, {
       font: "700 12px Arial, sans-serif",
       maxLines: 3,
     });
-    x += modelWidth;
+    ctx.font = "10px Arial, sans-serif";
+    ctx.fillStyle = "#6b7280";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(row.entryMode === "auto" ? "Auto" : "Manual", x + platformColWidth / 2, y + headerHeight - 11);
+    x += platformColWidth;
   }
 
   drawRect(ctx, x, y, subtotalWidth, headerHeight, "#f3f4f6");
@@ -229,23 +234,20 @@ function drawSalesReportCanvas(report: SalesReportExportData): HTMLCanvasElement
   });
 
   y += headerHeight;
-  for (const [rowIndex, row] of report.rows.entries()) {
+  for (const [modelIndex, model] of report.models.entries()) {
     x = padding;
-    const fill = rowIndex % 2 === 0 ? "#ffffff" : "#fbfdff";
+    const fill = modelIndex % 2 === 0 ? "#ffffff" : "#fbfdff";
 
-    drawRect(ctx, x, y, platformWidth, rowHeight, fill);
-    drawLeftText(ctx, row.platform, x, y - 4, platformWidth, rowHeight, {
+    drawRect(ctx, x, y, modelColWidth, rowHeight, fill);
+    drawLeftText(ctx, model, x, y, modelColWidth, rowHeight, {
       font: "600 13px Arial, sans-serif",
     });
-    drawLeftText(ctx, row.entryMode === "auto" ? "Auto" : "Manual", x, y + 10, platformWidth, rowHeight, {
-      font: "10px Arial, sans-serif",
-      color: "#6b7280",
-    });
-    x += platformWidth;
+    x += modelColWidth;
 
-    for (const cell of row.cells) {
-      drawRect(ctx, x, y, modelWidth, rowHeight, fill);
-      drawCenteredText(ctx, formatCount(cell.total), x, y, modelWidth, rowHeight, {
+    for (const row of report.rows) {
+      const cell = row.cells[modelIndex];
+      drawRect(ctx, x, y, platformColWidth, rowHeight, fill);
+      drawCenteredText(ctx, formatCount(cell.total), x, y, platformColWidth, rowHeight, {
         font: cell.total > 0 ? "700 13px Menlo, Consolas, monospace" : "12px Arial, sans-serif",
         color: cell.total > 0 ? "#111827" : "#9ca3af",
         maxLines: 1,
@@ -255,35 +257,36 @@ function drawSalesReportCanvas(report: SalesReportExportData): HTMLCanvasElement
         ctx.fillStyle = "#6b7280";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(`${cell.auto}+${cell.manual}`, x + modelWidth / 2, y + rowHeight - 8);
+        ctx.fillText(`${cell.auto}+${cell.manual}`, x + platformColWidth / 2, y + rowHeight - 8);
       }
-      x += modelWidth;
+      x += platformColWidth;
     }
 
+    const modelTotal = report.modelTotals[modelIndex];
     drawRect(ctx, x, y, subtotalWidth, rowHeight, fill);
-    drawCenteredText(ctx, formatCount(row.total), x, y, subtotalWidth, rowHeight, {
-      font: row.total > 0 ? "700 13px Menlo, Consolas, monospace" : "12px Arial, sans-serif",
-      color: row.total > 0 ? "#111827" : "#9ca3af",
+    drawCenteredText(ctx, formatCount(modelTotal.total), x, y, subtotalWidth, rowHeight, {
+      font: modelTotal.total > 0 ? "700 13px Menlo, Consolas, monospace" : "12px Arial, sans-serif",
+      color: modelTotal.total > 0 ? "#111827" : "#9ca3af",
       maxLines: 1,
     });
     y += rowHeight;
   }
 
   x = padding;
-  drawRect(ctx, x, y, platformWidth, footerHeight, "#eef2f7");
-  drawLeftText(ctx, "Subtotal", x, y, platformWidth, footerHeight, {
+  drawRect(ctx, x, y, modelColWidth, footerHeight, "#eef2f7");
+  drawLeftText(ctx, "Subtotal", x, y, modelColWidth, footerHeight, {
     font: "700 13px Arial, sans-serif",
   });
-  x += platformWidth;
+  x += modelColWidth;
 
-  for (const cell of report.modelTotals) {
-    drawRect(ctx, x, y, modelWidth, footerHeight, "#eef2f7");
-    drawCenteredText(ctx, formatCount(cell.total), x, y, modelWidth, footerHeight, {
-      font: cell.total > 0 ? "700 13px Menlo, Consolas, monospace" : "12px Arial, sans-serif",
-      color: cell.total > 0 ? "#111827" : "#9ca3af",
+  for (const row of report.rows) {
+    drawRect(ctx, x, y, platformColWidth, footerHeight, "#eef2f7");
+    drawCenteredText(ctx, formatCount(row.total), x, y, platformColWidth, footerHeight, {
+      font: row.total > 0 ? "700 13px Menlo, Consolas, monospace" : "12px Arial, sans-serif",
+      color: row.total > 0 ? "#111827" : "#9ca3af",
       maxLines: 1,
     });
-    x += modelWidth;
+    x += platformColWidth;
   }
 
   drawRect(ctx, x, y, subtotalWidth, footerHeight, "#e5eaf1");
