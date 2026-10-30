@@ -18,6 +18,7 @@ import {
   RotateCcw,
   ClipboardList,
   FileBadge,
+  Headset,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -41,6 +42,7 @@ export const navigation: NavItem[] = [
       { name: "Records", href: "/warranties/records", icon: ClipboardList },
     ],
   },
+  { name: "Support", href: "/support", icon: Headset },
   {
     name: "Finance", href: "/finance", icon: DollarSign,
     children: [
