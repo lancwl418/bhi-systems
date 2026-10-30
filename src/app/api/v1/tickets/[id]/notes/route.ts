@@ -38,6 +38,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       kind: body.kind === "event" ? "event" : "note",
       author: typeof body.author === "string" && body.author ? body.author : "api",
       content,
+      attachments: Array.isArray(body.attachments) ? body.attachments : [],
     })
     .select()
     .single();

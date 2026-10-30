@@ -56,10 +56,38 @@ async function getTicket(id: string) {
         .order("created_at", { ascending: false }),
     ]);
 
+  // Attachments live in a private bucket — resolve short-lived signed URLs
+  // for anything stored with a `path` (note uploads, agent-uploaded files).
+  const paths: string[] = [];
+  for (const row of [...(notes ?? []), ...(emails ?? [])]) {
+    for (const a of row.attachments ?? []) {
+      if (a.path && !a.url) paths.push(a.path);
+    }
+  }
+  const signedByPath = new Map<string, string>();
+  if (paths.length > 0) {
+    const { data: signed } = await supabase.storage
+      .from("ticket-attachments")
+      .createSignedUrls(paths, 60 * 60);
+    for (const s of signed ?? []) {
+      if (s.path && s.signedUrl) signedByPath.set(s.path, s.signedUrl);
+    }
+  }
+  const withUrls = <T extends { attachments?: { path?: string; url?: string }[] }>(
+    rows: T[]
+  ): T[] =>
+    rows.map((row) => ({
+      ...row,
+      attachments: (row.attachments ?? []).map((a) => ({
+        ...a,
+        url: a.url || (a.path ? signedByPath.get(a.path) : undefined),
+      })),
+    }));
+
   return {
     ticket: ticket as SupportTicket,
-    notes: (notes ?? []) as ThreadNote[],
-    emails: (emails ?? []) as ThreadEmail[],
+    notes: withUrls((notes ?? []) as ThreadNote[]),
+    emails: withUrls((emails ?? []) as ThreadEmail[]),
     drafts: (drafts ?? []) as TicketDraft[],
   };
 }

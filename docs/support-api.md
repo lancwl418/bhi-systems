@@ -87,8 +87,11 @@ Body (optional): `{ "reason": "...", "author": "..." }`. Close sets
 
 ### `POST /api/v1/tickets/:id/notes`
 
-Body: `{ "content": "...", "author"?: "...", "kind"?: "note" | "event" }`.
-`GET` on the same path lists the timeline.
+Body: `{ "content": "...", "author"?: "...", "kind"?: "note" | "event",
+"attachments"?: [{ "filename", "mime_type", "size", "url" }] }`.
+`GET` on the same path lists the timeline. Attachment entries with a `url`
+are linked as-is in the UI; entries with a `path` instead are assumed to live
+in the `ticket-attachments` storage bucket and get signed URLs when rendered.
 
 ### `POST /api/v1/tickets/:id/emails` — log an email
 
