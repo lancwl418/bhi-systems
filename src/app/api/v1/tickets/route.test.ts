@@ -104,6 +104,24 @@ describe("support API v1 auth and validation", () => {
       issue_summary: "Unit arrived damaged",
       po_number: "PO-9",
       stuck: true,
+      // auto-classified from the summary
+      case_type: "shipping_damage",
     });
+  });
+
+  it("rejects invalid enum values with a 400", async () => {
+    const response = await createTicket(
+      request("/api/v1/tickets", {
+        method: "POST",
+        body: {
+          customer_email: "jane@example.com",
+          issue_summary: "Something broke",
+          case_type: "not-a-type",
+        },
+      })
+    );
+    expect(response.status).toBe(400);
+    const payload = await response.json();
+    expect(payload.error).toContain("case_type");
   });
 });

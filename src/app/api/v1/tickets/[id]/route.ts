@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceSupabase } from "@/lib/supabase/server";
 import { requireApiToken, isUuid, apiError } from "@/lib/support/api-auth";
+import { CASE_TYPES, type CaseType } from "@/lib/support/case-types";
+import {
+  REPLY_STATUSES,
+  PROGRESS_VALUES,
+  invalidEnumMessage,
+} from "@/lib/support/ticket-enums";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -90,6 +96,28 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
   if (Object.keys(updates).length === 0) {
     return apiError("No editable fields in request", 400);
+  }
+
+  if (
+    "case_type" in updates &&
+    !CASE_TYPES.includes(updates.case_type as CaseType)
+  ) {
+    return apiError(invalidEnumMessage("case_type", CASE_TYPES), 400);
+  }
+  if (
+    "reply_status" in updates &&
+    !(REPLY_STATUSES as readonly string[]).includes(String(updates.reply_status))
+  ) {
+    return apiError(invalidEnumMessage("reply_status", REPLY_STATUSES), 400);
+  }
+  if (
+    "progress" in updates &&
+    !(PROGRESS_VALUES as readonly string[]).includes(String(updates.progress))
+  ) {
+    return apiError(invalidEnumMessage("progress", PROGRESS_VALUES), 400);
+  }
+  if ("stuck" in updates && typeof updates.stuck !== "boolean") {
+    return apiError("stuck must be a boolean", 400);
   }
 
   const supabase = await createServiceSupabase();

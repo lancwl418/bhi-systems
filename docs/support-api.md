@@ -29,7 +29,7 @@ status (`401` bad token, `404` unknown ticket, `400` invalid input).
 | `source` | string | how the case reached us: "Direct email", "Forwarded by Home Depot", ... |
 | `channel` | string | purchase channel: "Home Depot", "Lowe's", "Shopify", ... |
 | `issue_summary` | string | required on create |
-| `case_type` | `shipping_damage` \| `warranty_claim` \| `parts_request` \| `refund_return` \| `technical_support` \| `order_status` \| `registration` \| `other` | defaults to `other`; xlsx import auto-classifies from the summary |
+| `case_type` | `shipping_damage` \| `warranty_claim` \| `parts_request` \| `refund_return` \| `technical_support` \| `order_status` \| `review_reward` \| `registration` \| `other` | omit on create to auto-classify from `issue_summary` (keyword rules) |
 | `model_number` / `po_number` / `order_number` | string | used by search/dedup |
 | `reply_status` | `not_replied` \| `in_progress` \| `replied` | auto-set to `replied` when an outbound email is logged |
 | `progress` | `in_progress` \| `awaiting_customer` \| `awaiting_internal` \| `awaiting_third_party` \| `resolved` | |
@@ -61,7 +61,11 @@ you can tell open duplicates from closed history.
 ### `POST /api/v1/tickets` — create
 
 Body: any ticket fields above. `issue_summary` plus `customer_name` or
-`customer_email` are required. Returns `201 { ok, ticket }`.
+`customer_email` are required. When `case_type` is omitted it is
+auto-classified from the summary. Returns `201 { ok, ticket }`.
+
+Invalid `case_type` / `reply_status` / `progress` values (on create or PATCH)
+return `400` listing the accepted values.
 
 ### `GET /api/v1/tickets/:id` — detail
 

@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceSupabase } from "@/lib/supabase/server";
 import { requireApiToken, likeTerm, apiError } from "@/lib/support/api-auth";
-import { CASE_TYPES, type CaseType } from "@/lib/support/case-types";
+import {
+  CASE_TYPES,
+  classifyCaseType,
+  type CaseType,
+} from "@/lib/support/case-types";
+import {
+  REPLY_STATUSES,
+  PROGRESS_VALUES,
+  invalidEnumMessage,
+} from "@/lib/support/ticket-enums";
 
 // GET /api/v1/tickets — list with filters + pagination
 //   ?status=open|closed  ?progress=  ?reply_status=  ?stuck=true|false
@@ -129,20 +138,28 @@ export async function POST(req: NextRequest) {
     assignee: str("assignee"),
     next_step: str("next_step"),
   };
-  if (str("reply_status")) insert.reply_status = str("reply_status");
-  if (str("progress")) insert.progress = str("progress");
+  const replyStatus = str("reply_status");
+  if (replyStatus) {
+    if (!(REPLY_STATUSES as readonly string[]).includes(replyStatus)) {
+      return apiError(invalidEnumMessage("reply_status", REPLY_STATUSES), 400);
+    }
+    insert.reply_status = replyStatus;
+  }
+  const progress = str("progress");
+  if (progress) {
+    if (!(PROGRESS_VALUES as readonly string[]).includes(progress)) {
+      return apiError(invalidEnumMessage("progress", PROGRESS_VALUES), 400);
+    }
+    insert.progress = progress;
+  }
   if (typeof body.stuck === "boolean") insert.stuck = body.stuck;
 
   const caseType = str("case_type");
-  if (caseType) {
-    if (!CASE_TYPES.includes(caseType as CaseType)) {
-      return apiError(
-        `Invalid case_type; expected one of: ${CASE_TYPES.join(", ")}`,
-        400
-      );
-    }
-    insert.case_type = caseType;
+  if (caseType && !CASE_TYPES.includes(caseType as CaseType)) {
+    return apiError(invalidEnumMessage("case_type", CASE_TYPES), 400);
   }
+  // No explicit type → classify from the summary with the shared keyword rules
+  insert.case_type = caseType ?? classifyCaseType(issueSummary);
 
   const supabase = await createServiceSupabase();
   const { data, error } = await supabase
