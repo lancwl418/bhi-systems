@@ -32,7 +32,7 @@ status (`401` bad token, `404` unknown ticket, `400` invalid input).
 | `case_type` | `shipping_damage` \| `warranty_claim` \| `parts_request` \| `refund_return` \| `technical_support` \| `order_status` \| `review_reward` \| `registration` \| `other` | omit on create to auto-classify from `issue_summary` (keyword rules) |
 | `model_number` / `po_number` / `order_number` | string | used by search/dedup |
 | `reply_status` | `not_replied` \| `in_progress` \| `replied` | auto-set to `replied` when an outbound email is logged |
-| `progress` | `in_progress` \| `awaiting_customer` \| `awaiting_internal` \| `awaiting_third_party` \| `resolved` | |
+| `progress` | `in_progress` \| `awaiting_customer` \| `awaiting_internal` \| `awaiting_third_party` \| `resolved` \| `ignored` | `ignored` = no action needed (spam/duplicate); grayed out in the UI |
 | `stuck` | boolean | |
 | `next_step` | string | |
 | `assignee` | string | |

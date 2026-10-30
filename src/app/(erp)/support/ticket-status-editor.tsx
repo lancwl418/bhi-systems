@@ -24,20 +24,22 @@ const PROGRESS_OPTIONS = [
   { value: "awaiting_internal", label: "Awaiting internal" },
   { value: "awaiting_third_party", label: "Awaiting third party" },
   { value: "resolved", label: "Resolved" },
+  { value: "ignored", label: "Ignored" },
 ];
 
 const replyColors: Record<string, string> = {
-  not_replied: "text-red-700",
-  in_progress: "text-blue-700",
-  replied: "text-green-700",
+  not_replied: "bg-red-100 text-red-800 border-red-300 font-medium",
+  in_progress: "bg-blue-50 text-blue-700 border-blue-200",
+  replied: "bg-green-50 text-green-700 border-green-200",
 };
 
 const progressColors: Record<string, string> = {
-  in_progress: "text-blue-700",
-  awaiting_customer: "text-yellow-700",
-  awaiting_internal: "text-orange-700",
-  awaiting_third_party: "text-purple-700",
-  resolved: "text-gray-500",
+  in_progress: "bg-blue-50 text-blue-700 border-blue-200",
+  awaiting_customer: "bg-yellow-50 text-yellow-800 border-yellow-300",
+  awaiting_internal: "bg-orange-100 text-orange-800 border-orange-300 font-medium",
+  awaiting_third_party: "bg-purple-50 text-purple-700 border-purple-200",
+  resolved: "bg-gray-100 text-gray-500 border-gray-200",
+  ignored: "bg-gray-100 text-gray-400 border-gray-200",
 };
 
 export function TicketStatusEditor({ ticket }: { ticket: SupportTicket }) {

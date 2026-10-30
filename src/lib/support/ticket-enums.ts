@@ -8,6 +8,7 @@ export const PROGRESS_VALUES = [
   "awaiting_internal",
   "awaiting_third_party",
   "resolved",
+  "ignored",
 ] as const;
 
 export function invalidEnumMessage(

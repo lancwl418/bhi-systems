@@ -41,7 +41,8 @@ export interface SupportTicket {
     | "awaiting_customer"
     | "awaiting_internal"
     | "awaiting_third_party"
-    | "resolved";
+    | "resolved"
+    | "ignored";
   stuck: boolean;
   next_step: string | null;
   assignee: string | null;
@@ -68,11 +69,11 @@ async function getTickets(): Promise<SupportTicket[]> {
 export default async function SupportTicketsPage() {
   const tickets = await getTickets();
 
-  const open = tickets.filter((t) => t.progress !== "resolved");
-  const stuck = tickets.filter((t) => t.stuck && t.progress !== "resolved");
-  const notReplied = tickets.filter(
-    (t) => t.reply_status === "not_replied" && t.progress !== "resolved"
-  );
+  const isDone = (t: SupportTicket) =>
+    t.progress === "resolved" || t.progress === "ignored" || Boolean(t.closed_at);
+  const open = tickets.filter((t) => !isDone(t));
+  const stuck = open.filter((t) => t.stuck);
+  const notReplied = open.filter((t) => t.reply_status === "not_replied");
 
   const stats = [
     { label: "Open", value: open.length },
@@ -80,6 +81,17 @@ export default async function SupportTicketsPage() {
     { label: "Not replied", value: notReplied.length, alert: notReplied.length > 0 },
     { label: "Total", value: tickets.length },
   ];
+
+  // Row emphasis: done/ignored fade out; stuck tickets jump out; unanswered
+  // ones get a softer highlight.
+  const rowTone = (t: SupportTicket) => {
+    if (isDone(t)) return "opacity-50 bg-muted/30";
+    if (t.stuck)
+      return "bg-red-50/80 hover:bg-red-50 border-l-2 border-l-red-500";
+    if (t.reply_status === "not_replied")
+      return "bg-amber-50/70 hover:bg-amber-50 border-l-2 border-l-amber-400";
+    return "";
+  };
 
   return (
     <div className="space-y-6">
@@ -91,6 +103,21 @@ export default async function SupportTicketsPage() {
           </p>
         </div>
         <ImportSupportTicketsXLSX />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm bg-red-400" />
+          Stuck — follow up now
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm bg-amber-400" />
+          Not replied yet
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm bg-gray-300" />
+          Resolved / Ignored
+        </span>
       </div>
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -135,7 +162,7 @@ export default async function SupportTicketsPage() {
                 </TableRow>
               ) : (
                 tickets.map((t) => (
-                  <TableRow key={t.id} className="align-top">
+                  <TableRow key={t.id} className={`align-top ${rowTone(t)}`}>
                     <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                       {t.date_label ||
                         (t.case_date
