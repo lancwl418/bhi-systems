@@ -66,7 +66,12 @@ async function getTickets(): Promise<SupportTicket[]> {
   return (data ?? []) as SupportTicket[];
 }
 
-export default async function SupportTicketsPage() {
+export default async function SupportTicketsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ filter?: string }>;
+}) {
+  const { filter } = await searchParams;
   const tickets = await getTickets();
 
   const isDone = (t: SupportTicket) =>
@@ -76,11 +81,28 @@ export default async function SupportTicketsPage() {
   const notReplied = open.filter((t) => t.reply_status === "not_replied");
 
   const stats = [
-    { label: "Open", value: open.length },
-    { label: "Stuck", value: stuck.length, alert: stuck.length > 0 },
-    { label: "Not replied", value: notReplied.length, alert: notReplied.length > 0 },
-    { label: "Total", value: tickets.length },
+    { key: "open", label: "Open", value: open.length },
+    { key: "stuck", label: "Stuck", value: stuck.length, alert: stuck.length > 0 },
+    {
+      key: "not_replied",
+      label: "Not replied",
+      value: notReplied.length,
+      alert: notReplied.length > 0,
+    },
+    { key: "all", label: "Total", value: tickets.length },
   ];
+
+  const activeFilter = ["open", "stuck", "not_replied"].includes(filter ?? "")
+    ? filter
+    : "all";
+  const visibleTickets =
+    activeFilter === "open"
+      ? open
+      : activeFilter === "stuck"
+        ? stuck
+        : activeFilter === "not_replied"
+          ? notReplied
+          : tickets;
 
   // Row emphasis: done/ignored fade out; stuck tickets jump out; unanswered
   // ones get a softer highlight.
@@ -121,19 +143,41 @@ export default async function SupportTicketsPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        {stats.map((s) => (
-          <Card key={s.label}>
-            <CardContent className="p-4">
-              <p className="text-sm text-muted-foreground">{s.label}</p>
-              <p
-                className={`text-2xl font-bold ${s.alert ? "text-red-600" : ""}`}
+        {stats.map((s) => {
+          const active = activeFilter === s.key;
+          return (
+            <Link
+              key={s.key}
+              href={active || s.key === "all" ? "/support" : `/support?filter=${s.key}`}
+            >
+              <Card
+                className={`transition-colors hover:bg-muted/50 ${
+                  active && s.key !== "all" ? "ring-2 ring-primary" : ""
+                }`}
               >
-                {s.value}
-              </p>
-            </CardContent>
-          </Card>
-        ))}
+                <CardContent className="p-4">
+                  <p className="text-sm text-muted-foreground">{s.label}</p>
+                  <p
+                    className={`text-2xl font-bold ${s.alert ? "text-red-600" : ""}`}
+                  >
+                    {s.value}
+                  </p>
+                </CardContent>
+              </Card>
+            </Link>
+          );
+        })}
       </div>
+
+      {activeFilter !== "all" && (
+        <p className="text-sm text-muted-foreground">
+          Showing {visibleTickets.length} of {tickets.length} tickets
+          {" · "}
+          <Link href="/support" className="underline hover:text-foreground">
+            clear filter
+          </Link>
+        </p>
+      )}
 
       <Card>
         <CardContent className="p-0">
@@ -150,18 +194,19 @@ export default async function SupportTicketsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {tickets.length === 0 ? (
+              {visibleTickets.length === 0 ? (
                 <TableRow>
                   <TableCell
                     colSpan={7}
                     className="text-center text-muted-foreground py-12"
                   >
-                    No support tickets yet. Import the weekly Excel sheet to get
-                    started.
+                    {activeFilter !== "all"
+                      ? "No tickets match this filter."
+                      : "No support tickets yet. Import the weekly Excel sheet to get started."}
                   </TableCell>
                 </TableRow>
               ) : (
-                tickets.map((t) => (
+                visibleTickets.map((t) => (
                   <TableRow key={t.id} className={`align-top ${rowTone(t)}`}>
                     <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                       {t.date_label ||
