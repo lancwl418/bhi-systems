@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceSupabase } from "@/lib/supabase/server";
 import { requireApiToken, isUuid, apiError } from "@/lib/support/api-auth";
+import { signAttachmentUrls } from "@/lib/support/attachments";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -65,5 +66,6 @@ export async function GET(req: NextRequest, { params }: Params) {
 
   if (error) return apiError(error.message, 500);
 
-  return NextResponse.json({ ok: true, notes: data ?? [] });
+  const notes = await signAttachmentUrls(supabase, data ?? []);
+  return NextResponse.json({ ok: true, notes });
 }

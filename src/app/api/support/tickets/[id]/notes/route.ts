@@ -1,19 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceSupabase } from "@/lib/supabase/server";
-import { randomUUID } from "node:crypto";
+import {
+  uploadTicketFiles,
+  validateUploadFiles,
+} from "@/lib/support/attachments";
 
 export const maxDuration = 60;
-
-const BUCKET = "ticket-attachments";
-const MAX_FILES = 10;
-const MAX_FILE_SIZE = 25 * 1024 * 1024;
-
-interface NoteAttachment {
-  filename: string;
-  mime_type: string;
-  size: number;
-  path: string;
-}
 
 // Internal (session-authed) note endpoint for the ticket detail page.
 // Accepts JSON ({ content, author }) or multipart form data with a `content`
@@ -49,18 +41,11 @@ export async function POST(
         { status: 400 }
       );
     }
-    if (files.length > MAX_FILES) {
-      return NextResponse.json(
-        { ok: false, error: `At most ${MAX_FILES} files per note` },
-        { status: 400 }
-      );
-    }
-    const oversize = files.find((f) => f.size > MAX_FILE_SIZE);
-    if (oversize) {
-      return NextResponse.json(
-        { ok: false, error: `${oversize.name} exceeds the 25 MB limit` },
-        { status: 400 }
-      );
+    if (files.length > 0) {
+      const invalid = validateUploadFiles(files);
+      if (invalid) {
+        return NextResponse.json({ ok: false, error: invalid }, { status: 400 });
+      }
     }
 
     const supabase = await createServiceSupabase();
@@ -77,27 +62,13 @@ export async function POST(
       );
     }
 
-    const attachments: NoteAttachment[] = [];
-    for (const file of files) {
-      const safeName = file.name.replace(/[^\w.\-()\[\] ]+/g, "_");
-      const path = `${id}/${randomUUID()}-${safeName}`;
-      const { error: uploadError } = await supabase.storage
-        .from(BUCKET)
-        .upload(path, Buffer.from(await file.arrayBuffer()), {
-          contentType: file.type || "application/octet-stream",
-        });
-      if (uploadError) {
-        return NextResponse.json(
-          { ok: false, error: `Upload failed for ${file.name}: ${uploadError.message}` },
-          { status: 500 }
-        );
-      }
-      attachments.push({
-        filename: file.name,
-        mime_type: file.type || "application/octet-stream",
-        size: file.size,
-        path,
-      });
+    const { attachments, error: uploadError } = await uploadTicketFiles(
+      supabase,
+      id,
+      files
+    );
+    if (uploadError) {
+      return NextResponse.json({ ok: false, error: uploadError }, { status: 500 });
     }
 
     const { data, error } = await supabase

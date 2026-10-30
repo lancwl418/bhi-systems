@@ -11,6 +11,7 @@ import {
   CASE_TYPE_LABELS,
 } from "@/lib/support/case-types";
 import type { SupportTicket } from "../page";
+import { signAttachmentUrls } from "@/lib/support/attachments";
 import { TicketThread, type ThreadEmail, type ThreadNote } from "./thread";
 import { TicketActions } from "./ticket-actions";
 import { TicketStatusEditor } from "../ticket-status-editor";
@@ -58,36 +59,15 @@ async function getTicket(id: string) {
 
   // Attachments live in a private bucket — resolve short-lived signed URLs
   // for anything stored with a `path` (note uploads, agent-uploaded files).
-  const paths: string[] = [];
-  for (const row of [...(notes ?? []), ...(emails ?? [])]) {
-    for (const a of row.attachments ?? []) {
-      if (a.path && !a.url) paths.push(a.path);
-    }
-  }
-  const signedByPath = new Map<string, string>();
-  if (paths.length > 0) {
-    const { data: signed } = await supabase.storage
-      .from("ticket-attachments")
-      .createSignedUrls(paths, 60 * 60);
-    for (const s of signed ?? []) {
-      if (s.path && s.signedUrl) signedByPath.set(s.path, s.signedUrl);
-    }
-  }
-  const withUrls = <T extends { attachments?: { path?: string; url?: string }[] }>(
-    rows: T[]
-  ): T[] =>
-    rows.map((row) => ({
-      ...row,
-      attachments: (row.attachments ?? []).map((a) => ({
-        ...a,
-        url: a.url || (a.path ? signedByPath.get(a.path) : undefined),
-      })),
-    }));
+  const [signedNotes, signedEmails] = await Promise.all([
+    signAttachmentUrls(supabase, (notes ?? []) as ThreadNote[]),
+    signAttachmentUrls(supabase, (emails ?? []) as ThreadEmail[]),
+  ]);
 
   return {
     ticket: ticket as SupportTicket,
-    notes: withUrls((notes ?? []) as ThreadNote[]),
-    emails: withUrls((emails ?? []) as ThreadEmail[]),
+    notes: signedNotes,
+    emails: signedEmails,
     drafts: (drafts ?? []) as TicketDraft[],
   };
 }

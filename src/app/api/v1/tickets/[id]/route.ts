@@ -7,6 +7,7 @@ import {
   PROGRESS_VALUES,
   invalidEnumMessage,
 } from "@/lib/support/ticket-enums";
+import { signAttachmentUrls } from "@/lib/support/attachments";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -47,11 +48,16 @@ export async function GET(req: NextRequest, { params }: Params) {
         .order("created_at", { ascending: false }),
     ]);
 
+  const [signedNotes, signedEmails] = await Promise.all([
+    signAttachmentUrls(supabase, notes ?? []),
+    signAttachmentUrls(supabase, emails ?? []),
+  ]);
+
   return NextResponse.json({
     ok: true,
     ticket,
-    notes: notes ?? [],
-    emails: emails ?? [],
+    notes: signedNotes,
+    emails: signedEmails,
     drafts: drafts ?? [],
   });
 }

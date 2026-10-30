@@ -115,6 +115,24 @@ row with `"duplicate": true` instead of creating another. Logging a
 `direction: "outbound"` email marks the ticket `replied`. `GET` on the same
 path lists the ticket's emails oldest-first.
 
+### `POST /api/v1/tickets/:id/attachments` — upload files
+
+Multipart form data with one or more `files` entries (up to 10 files, 25 MB
+each). Files are stored in the private `ticket-attachments` bucket. Returns
+`201 { ok, attachments: [{ filename, mime_type, size, path, url }] }` — pass
+the entries (with their `path`) in the `attachments` array of a subsequent
+`POST .../emails` or `POST .../notes` call to link them. The `url` is a
+signed link valid for 1 hour.
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -F "files=@photo1.jpg" -F "files=@invoice.pdf" \
+  https://<host>/api/v1/tickets/<id>/attachments
+```
+
+All read endpoints (ticket detail, `GET .../emails`, `GET .../notes`) resolve
+`path`-based attachments to fresh signed `url`s automatically.
+
 ### `POST /api/v1/tickets/:id/draft` — store a reply draft
 
 Body: `{ "subject"?, "body", "created_by"? }`. After you send it via Gmail,
@@ -127,6 +145,8 @@ write the sent message back with `POST .../emails`
    `?q=<sender email>` / `?q=<PO>`.
 2. No match → `POST /tickets`; match → use that ticket.
 3. `POST /tickets/:id/emails` with the inbound message (dedup by message_id).
+   For real files, upload via `POST /tickets/:id/attachments` first and
+   reference the returned `path`s in the email's `attachments`.
 4. Optionally `POST /tickets/:id/draft` for review.
 5. After sending in Gmail → `POST /tickets/:id/emails` with
    `direction: "outbound"` and the sent `message_id` (auto-marks replied).
