@@ -15,6 +15,7 @@ import { signAttachmentUrls } from "@/lib/support/attachments";
 import { TicketThread, type ThreadEmail, type ThreadNote } from "./thread";
 import { TicketActions } from "./ticket-actions";
 import { TicketStatusEditor } from "../ticket-status-editor";
+import { AutoRefresh } from "../auto-refresh";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -92,6 +93,7 @@ export default async function SupportTicketDetailPage({ params }: Props) {
 
   return (
     <div className="space-y-6">
+      <AutoRefresh />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <Link

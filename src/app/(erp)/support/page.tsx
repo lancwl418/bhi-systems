@@ -12,6 +12,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { createServiceSupabase } from "@/lib/supabase/server";
 import { ImportSupportTicketsXLSX } from "./import-xlsx";
+import { AutoRefresh } from "./auto-refresh";
 import { TicketStatusEditor } from "./ticket-status-editor";
 import { AlertTriangle } from "lucide-react";
 import Link from "next/link";
@@ -117,6 +118,7 @@ export default async function SupportTicketsPage({
 
   return (
     <div className="space-y-6">
+      <AutoRefresh />
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold">Support Tickets</h2>
