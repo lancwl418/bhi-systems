@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { createServiceSupabase } from "@/lib/supabase/server";
+import { classifyCaseType } from "@/lib/support/case-types";
 
 export const maxDuration = 120;
 
@@ -191,6 +192,7 @@ export async function POST(req: NextRequest) {
         customer_email: email || null,
         source: str(row, idx.source) || null,
         issue_summary: summary,
+        case_type: classifyCaseType(summary),
         reply_status: mapReplyStatus(str(row, idx.replyStatus)),
         progress: mapProgress(str(row, idx.progress)),
         stuck,

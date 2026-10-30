@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceSupabase } from "@/lib/supabase/server";
 import { requireApiToken, likeTerm, apiError } from "@/lib/support/api-auth";
+import { CASE_TYPES, type CaseType } from "@/lib/support/case-types";
 
 // GET /api/v1/tickets — list with filters + pagination
 //   ?status=open|closed  ?progress=  ?reply_status=  ?stuck=true|false
@@ -42,6 +43,9 @@ export async function GET(req: NextRequest) {
 
   const channel = params.get("channel");
   if (channel) query = query.ilike("channel", likeTerm(channel));
+
+  const caseType = params.get("case_type");
+  if (caseType) query = query.eq("case_type", caseType);
 
   const assignee = params.get("assignee");
   if (assignee) query = query.ilike("assignee", likeTerm(assignee));
@@ -128,6 +132,17 @@ export async function POST(req: NextRequest) {
   if (str("reply_status")) insert.reply_status = str("reply_status");
   if (str("progress")) insert.progress = str("progress");
   if (typeof body.stuck === "boolean") insert.stuck = body.stuck;
+
+  const caseType = str("case_type");
+  if (caseType) {
+    if (!CASE_TYPES.includes(caseType as CaseType)) {
+      return apiError(
+        `Invalid case_type; expected one of: ${CASE_TYPES.join(", ")}`,
+        400
+      );
+    }
+    insert.case_type = caseType;
+  }
 
   const supabase = await createServiceSupabase();
   const { data, error } = await supabase

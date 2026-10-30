@@ -51,6 +51,7 @@ export async function GET(req: NextRequest, { params }: Params) {
 }
 
 const EDITABLE_FIELDS = [
+  "case_type",
   "reply_status",
   "progress",
   "stuck",

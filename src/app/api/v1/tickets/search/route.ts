@@ -3,7 +3,7 @@ import { createServiceSupabase } from "@/lib/supabase/server";
 import { requireApiToken, likeTerm, apiError } from "@/lib/support/api-auth";
 
 const SUMMARY_FIELDS =
-  "id, case_date, customer_name, customer_email, source, channel, issue_summary, " +
+  "id, case_date, case_type, customer_name, customer_email, source, channel, issue_summary, " +
   "model_number, po_number, order_number, reply_status, progress, stuck, assignee, closed_at, created_at";
 
 interface TicketSummary {

@@ -29,6 +29,7 @@ status (`401` bad token, `404` unknown ticket, `400` invalid input).
 | `source` | string | how the case reached us: "Direct email", "Forwarded by Home Depot", ... |
 | `channel` | string | purchase channel: "Home Depot", "Lowe's", "Shopify", ... |
 | `issue_summary` | string | required on create |
+| `case_type` | `shipping_damage` \| `warranty_claim` \| `parts_request` \| `refund_return` \| `technical_support` \| `order_status` \| `registration` \| `other` | defaults to `other`; xlsx import auto-classifies from the summary |
 | `model_number` / `po_number` / `order_number` | string | used by search/dedup |
 | `reply_status` | `not_replied` \| `in_progress` \| `replied` | auto-set to `replied` when an outbound email is logged |
 | `progress` | `in_progress` \| `awaiting_customer` \| `awaiting_internal` \| `awaiting_third_party` \| `resolved` | |
@@ -41,8 +42,8 @@ status (`401` bad token, `404` unknown ticket, `400` invalid input).
 
 ### `GET /api/v1/tickets` — list
 
-Query params (all optional): `status=open|closed`, `progress`, `reply_status`,
-`stuck=true|false`, `source`, `channel`, `assignee`, `date_from`, `date_to`
+Query params (all optional): `status=open|closed`, `case_type`, `progress`,
+`reply_status`, `stuck=true|false`, `source`, `channel`, `assignee`, `date_from`, `date_to`
 (on `case_date`), `q` (keyword across email / customer name / PO / order no /
 model / summary), `page` (1-based), `per_page` (default 50, max 200).
 

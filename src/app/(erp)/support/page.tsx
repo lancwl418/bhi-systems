@@ -14,15 +14,27 @@ import { createServiceSupabase } from "@/lib/supabase/server";
 import { ImportSupportTicketsXLSX } from "./import-xlsx";
 import { TicketStatusEditor } from "./ticket-status-editor";
 import { AlertTriangle } from "lucide-react";
+import Link from "next/link";
+import {
+  CASE_TYPE_COLORS,
+  CASE_TYPE_LABELS,
+  type CaseType,
+} from "@/lib/support/case-types";
 
 export interface SupportTicket {
   id: string;
   case_date: string | null;
   date_label: string | null;
+  case_type: CaseType;
   customer_name: string;
   customer_email: string | null;
+  customer_phone: string | null;
   source: string | null;
+  channel: string | null;
   issue_summary: string;
+  model_number: string | null;
+  po_number: string | null;
+  order_number: string | null;
   reply_status: "not_replied" | "in_progress" | "replied";
   progress:
     | "in_progress"
@@ -32,6 +44,9 @@ export interface SupportTicket {
     | "resolved";
   stuck: boolean;
   next_step: string | null;
+  assignee: string | null;
+  closed_at: string | null;
+  created_at: string;
 }
 
 async function getTickets(): Promise<SupportTicket[]> {
@@ -100,7 +115,7 @@ export default async function SupportTicketsPage() {
               <TableRow>
                 <TableHead>Date</TableHead>
                 <TableHead>Customer</TableHead>
-                <TableHead>Source</TableHead>
+                <TableHead>Type</TableHead>
                 <TableHead>Issue</TableHead>
                 <TableHead>Reply</TableHead>
                 <TableHead>Progress</TableHead>
@@ -133,23 +148,32 @@ export default async function SupportTicketsPage() {
                           {t.stuck && (
                             <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />
                           )}
-                          {t.customer_name || "—"}
+                          <Link
+                            href={`/support/${t.id}`}
+                            className="hover:underline"
+                          >
+                            {t.customer_name || t.customer_email || "—"}
+                          </Link>
                         </p>
                         {t.customer_email && (
                           <p className="text-xs text-muted-foreground break-all">
                             {t.customer_email}
                           </p>
                         )}
+                        {t.source && (
+                          <p className="text-xs text-muted-foreground">
+                            {t.source}
+                          </p>
+                        )}
                       </div>
                     </TableCell>
-                    <TableCell className="text-xs max-w-[140px]">
-                      {t.source ? (
-                        <Badge variant="outline" className="font-normal whitespace-normal text-left">
-                          {t.source}
-                        </Badge>
-                      ) : (
-                        "—"
-                      )}
+                    <TableCell>
+                      <Badge
+                        className={CASE_TYPE_COLORS[t.case_type] ?? ""}
+                        variant="secondary"
+                      >
+                        {CASE_TYPE_LABELS[t.case_type] ?? t.case_type}
+                      </Badge>
                     </TableCell>
                     <TableCell className="text-xs max-w-[380px]">
                       <p className="line-clamp-4 whitespace-pre-wrap">
