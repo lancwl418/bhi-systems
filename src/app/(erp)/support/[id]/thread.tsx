@@ -89,6 +89,42 @@ function AttachmentChips({ attachments }: { attachments: ThreadAttachment[] }) {
   );
 }
 
+function timestamp(value: string | null): string {
+  if (!value) return "";
+  return new Date(value).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function TimelineRow({
+  node,
+  nodeClass,
+  last,
+  children,
+}: {
+  node: React.ReactNode;
+  nodeClass: string;
+  last: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex gap-3">
+      <div className="flex flex-col items-center">
+        <div
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${nodeClass}`}
+        >
+          {node}
+        </div>
+        {!last && <div className="w-px flex-1 bg-border my-1" />}
+      </div>
+      <div className={`flex-1 min-w-0 ${last ? "" : "pb-6"}`}>{children}</div>
+    </div>
+  );
+}
+
 function EmailBubble({ email }: { email: ThreadEmail }) {
   const [expanded, setExpanded] = useState(false);
   const outbound = email.direction === "outbound";
@@ -96,25 +132,25 @@ function EmailBubble({ email }: { email: ThreadEmail }) {
   const long = body.length > 600;
 
   return (
-    <div className={`flex ${outbound ? "justify-end" : "justify-start"}`}>
+    <>
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 mb-1.5">
+        <span className="text-sm font-medium">
+          {outbound ? "BHI Support" : email.from_addr || "Customer"}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {outbound
+            ? `replied${email.to_addr ? ` to ${email.to_addr}` : ""}`
+            : "wrote"}
+        </span>
+        <span className="text-xs text-muted-foreground ml-auto shrink-0">
+          {timestamp(email.sent_at || email.created_at)}
+        </span>
+      </div>
       <div
-        className={`max-w-[85%] rounded-lg border p-3 text-sm ${
-          outbound ? "bg-blue-50 border-blue-200" : "bg-muted/40"
+        className={`rounded-lg border p-3 text-sm ${
+          outbound ? "bg-blue-50/70 border-blue-200" : "bg-muted/40"
         }`}
       >
-        <div className="flex items-center gap-2 mb-1 text-xs text-muted-foreground">
-          {outbound ? (
-            <Reply className="h-3.5 w-3.5 text-blue-600 shrink-0" />
-          ) : (
-            <Mail className="h-3.5 w-3.5 shrink-0" />
-          )}
-          <span className="font-medium text-foreground">
-            {outbound ? "BHI Support" : email.from_addr || "Customer"}
-          </span>
-          {email.sent_at && (
-            <span>{new Date(email.sent_at).toLocaleString()}</span>
-          )}
-        </div>
         {email.subject && <p className="font-medium mb-1">{email.subject}</p>}
         {body && (
           <p className="whitespace-pre-wrap text-sm">
@@ -131,7 +167,7 @@ function EmailBubble({ email }: { email: ThreadEmail }) {
         )}
         <AttachmentChips attachments={email.attachments} />
       </div>
-    </div>
+    </>
   );
 }
 
@@ -205,38 +241,80 @@ export function TicketThread({
           </p>
         )}
 
-        {items.map((item) =>
-          item.type === "email" ? (
-            <EmailBubble key={`e-${item.email.id}`} email={item.email} />
-          ) : item.note.kind === "event" ? (
-            <div
-              key={`n-${item.note.id}`}
-              className="flex items-center gap-2 text-xs text-muted-foreground"
-            >
-              <CircleDot className="h-3 w-3 shrink-0" />
-              <span className="whitespace-pre-wrap">{item.note.content}</span>
-              <span className="shrink-0">
-                · {new Date(item.note.created_at).toLocaleString()}
-              </span>
-            </div>
-          ) : (
-            <div key={`n-${item.note.id}`} className="flex gap-3">
-              <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center text-xs font-medium shrink-0">
-                {item.note.author.slice(0, 2).toUpperCase()}
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
+        <div>
+          {items.map((item, index) => {
+            const last = index === items.length - 1;
+            if (item.type === "email") {
+              const outbound = item.email.direction === "outbound";
+              return (
+                <TimelineRow
+                  key={`e-${item.email.id}`}
+                  last={last}
+                  nodeClass={
+                    outbound
+                      ? "bg-blue-100 border-blue-300 text-blue-700"
+                      : "bg-muted border-border text-muted-foreground"
+                  }
+                  node={
+                    outbound ? (
+                      <Reply className="h-4 w-4" />
+                    ) : (
+                      <Mail className="h-4 w-4" />
+                    )
+                  }
+                >
+                  <EmailBubble email={item.email} />
+                </TimelineRow>
+              );
+            }
+            if (item.note.kind === "event") {
+              return (
+                <TimelineRow
+                  key={`n-${item.note.id}`}
+                  last={last}
+                  nodeClass="bg-background border-border text-muted-foreground"
+                  node={<CircleDot className="h-3.5 w-3.5" />}
+                >
+                  <p className="text-xs text-muted-foreground leading-relaxed pt-2">
+                    <span className="whitespace-pre-wrap">{item.note.content}</span>
+                    <span className="ml-2 whitespace-nowrap">
+                      {timestamp(item.note.created_at)}
+                    </span>
+                  </p>
+                </TimelineRow>
+              );
+            }
+            return (
+              <TimelineRow
+                key={`n-${item.note.id}`}
+                last={last}
+                nodeClass="bg-amber-50 border-amber-200 text-amber-800 text-xs font-semibold"
+                node={item.note.author.slice(0, 2).toUpperCase()}
+              >
+                <div className="flex flex-wrap items-baseline gap-x-2 mb-1.5">
                   <span className="text-sm font-medium">{item.note.author}</span>
                   <span className="text-xs text-muted-foreground">
-                    {new Date(item.note.created_at).toLocaleString()}
+                    added a note
+                  </span>
+                  <span className="text-xs text-muted-foreground ml-auto shrink-0">
+                    {timestamp(item.note.created_at)}
                   </span>
                 </div>
-                <p className="text-sm whitespace-pre-wrap">{item.note.content}</p>
-                <AttachmentChips attachments={item.note.attachments ?? []} />
-              </div>
-            </div>
-          )
-        )}
+                {item.note.content && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+                    <p className="text-sm whitespace-pre-wrap">
+                      {item.note.content}
+                    </p>
+                    <AttachmentChips attachments={item.note.attachments ?? []} />
+                  </div>
+                )}
+                {!item.note.content && (
+                  <AttachmentChips attachments={item.note.attachments ?? []} />
+                )}
+              </TimelineRow>
+            );
+          })}
+        </div>
 
         <div className="space-y-2 pt-2 border-t">
           {pendingFiles.length > 0 && (
