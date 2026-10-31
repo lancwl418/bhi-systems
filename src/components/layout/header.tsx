@@ -18,7 +18,7 @@ import { useRouter } from "next/navigation";
 import { Menu } from "lucide-react";
 import { SidebarNav } from "./sidebar";
 
-export function Header() {
+export function Header({ role }: { role?: string | null }) {
   const router = useRouter();
   const supabase = createClient();
   const [open, setOpen] = useState(false);
@@ -40,7 +40,7 @@ export function Header() {
             <div className="flex h-14 items-center border-b px-6">
               <h1 className="text-xl font-bold">BHI ERP</h1>
             </div>
-            <SidebarNav onNavigate={() => setOpen(false)} />
+            <SidebarNav onNavigate={() => setOpen(false)} role={role} />
           </SheetContent>
         </Sheet>
         <h1 className="text-lg font-bold md:hidden">BHI ERP</h1>

@@ -21,6 +21,7 @@ import {
   Headset,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isPathAllowed } from "@/lib/access";
 
 interface NavItem {
   name: string;
@@ -56,12 +57,21 @@ export const navigation: NavItem[] = [
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 
-export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
+export function SidebarNav({
+  onNavigate,
+  role,
+}: {
+  onNavigate?: () => void;
+  role?: string | null;
+}) {
   const pathname = usePathname();
+  const visibleNavigation = navigation.filter((item) =>
+    isPathAllowed(role, item.href)
+  );
 
   return (
     <nav className="flex-1 space-y-1 p-4">
-      {navigation.map((item) => {
+      {visibleNavigation.map((item) => {
         const isActive =
           pathname === item.href || pathname.startsWith(item.href + "/");
         const isSection = item.children && pathname.startsWith(item.href);
@@ -113,13 +123,13 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-export function Sidebar() {
+export function Sidebar({ role }: { role?: string | null }) {
   return (
     <aside className="hidden md:flex h-screen w-64 flex-col border-r bg-background">
       <div className="flex h-14 items-center border-b px-6">
         <h1 className="text-xl font-bold">BHI ERP</h1>
       </div>
-      <SidebarNav />
+      <SidebarNav role={role} />
     </aside>
   );
 }
