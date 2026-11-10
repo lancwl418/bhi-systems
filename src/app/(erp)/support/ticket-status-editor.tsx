@@ -84,14 +84,16 @@ export function TicketStatusEditor({ ticket }: { ticket: SupportTicket }) {
   return (
     <div className="flex flex-col gap-1.5 min-w-[150px]">
       <Select
-        defaultValue={ticket.label ?? "pending"}
+        defaultValue={ticket.label ?? undefined}
         onValueChange={(v) => update("label", v as string)}
         disabled={saving}
       >
         <SelectTrigger
-          className={`h-7 text-xs ${labelColors[ticket.label] ?? ""}`}
+          className={`h-7 text-xs ${
+            (ticket.label && labelColors[ticket.label]) || ""
+          }`}
         >
-          <SelectValue />
+          <SelectValue placeholder="—" />
         </SelectTrigger>
         <SelectContent>
           {LABEL_OPTIONS.map((o) => (

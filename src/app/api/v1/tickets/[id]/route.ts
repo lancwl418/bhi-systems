@@ -126,6 +126,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
   if (
     "label" in updates &&
+    updates.label !== null &&
     !(LABEL_VALUES as readonly string[]).includes(String(updates.label))
   ) {
     return apiError(invalidEnumMessage("label", LABEL_VALUES), 400);
