@@ -44,6 +44,7 @@ export interface SupportTicket {
     | "awaiting_third_party"
     | "resolved"
     | "ignored";
+  label: "pending" | "in_progress" | "completed";
   stuck: boolean;
   next_step: string | null;
   assignee: string | null;

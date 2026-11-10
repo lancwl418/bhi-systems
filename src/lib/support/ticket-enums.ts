@@ -11,6 +11,8 @@ export const PROGRESS_VALUES = [
   "ignored",
 ] as const;
 
+export const LABEL_VALUES = ["pending", "in_progress", "completed"] as const;
+
 export function invalidEnumMessage(
   field: string,
   values: readonly string[]

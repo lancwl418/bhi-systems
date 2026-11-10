@@ -9,11 +9,12 @@ import {
 import {
   REPLY_STATUSES,
   PROGRESS_VALUES,
+  LABEL_VALUES,
   invalidEnumMessage,
 } from "@/lib/support/ticket-enums";
 
 // GET /api/v1/tickets — list with filters + pagination
-//   ?status=open|closed  ?progress=  ?reply_status=  ?stuck=true|false
+//   ?status=open|closed  ?progress=  ?reply_status=  ?label=  ?stuck=true|false
 //   ?source=  ?channel=  ?assignee=  ?date_from=  ?date_to=  (case_date)
 //   ?q= keyword across email / PO / order no / customer name / summary
 //   ?page=1  ?per_page=50 (max 200)
@@ -42,6 +43,9 @@ export async function GET(req: NextRequest) {
 
   const replyStatus = params.get("reply_status");
   if (replyStatus) query = query.eq("reply_status", replyStatus);
+
+  const label = params.get("label");
+  if (label) query = query.eq("label", label);
 
   const stuck = params.get("stuck");
   if (stuck === "true") query = query.eq("stuck", true);
@@ -151,6 +155,13 @@ export async function POST(req: NextRequest) {
       return apiError(invalidEnumMessage("progress", PROGRESS_VALUES), 400);
     }
     insert.progress = progress;
+  }
+  const label = str("label");
+  if (label) {
+    if (!(LABEL_VALUES as readonly string[]).includes(label)) {
+      return apiError(invalidEnumMessage("label", LABEL_VALUES), 400);
+    }
+    insert.label = label;
   }
   if (typeof body.stuck === "boolean") insert.stuck = body.stuck;
 

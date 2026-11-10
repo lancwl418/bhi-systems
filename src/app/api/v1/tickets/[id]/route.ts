@@ -5,6 +5,7 @@ import { CASE_TYPES, type CaseType } from "@/lib/support/case-types";
 import {
   REPLY_STATUSES,
   PROGRESS_VALUES,
+  LABEL_VALUES,
   invalidEnumMessage,
 } from "@/lib/support/ticket-enums";
 import { signAttachmentUrls } from "@/lib/support/attachments";
@@ -66,6 +67,7 @@ const EDITABLE_FIELDS = [
   "case_type",
   "reply_status",
   "progress",
+  "label",
   "stuck",
   "next_step",
   "assignee",
@@ -121,6 +123,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     !(PROGRESS_VALUES as readonly string[]).includes(String(updates.progress))
   ) {
     return apiError(invalidEnumMessage("progress", PROGRESS_VALUES), 400);
+  }
+  if (
+    "label" in updates &&
+    !(LABEL_VALUES as readonly string[]).includes(String(updates.label))
+  ) {
+    return apiError(invalidEnumMessage("label", LABEL_VALUES), 400);
   }
   if ("stuck" in updates && typeof updates.stuck !== "boolean") {
     return apiError("stuck must be a boolean", 400);

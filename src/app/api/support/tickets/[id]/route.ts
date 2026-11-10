@@ -5,6 +5,7 @@ const EDITABLE_FIELDS = [
   "case_type",
   "reply_status",
   "progress",
+  "label",
   "stuck",
   "next_step",
   "assignee",

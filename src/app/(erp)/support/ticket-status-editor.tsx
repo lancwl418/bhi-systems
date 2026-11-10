@@ -27,6 +27,18 @@ const PROGRESS_OPTIONS = [
   { value: "ignored", label: "Ignored" },
 ];
 
+const LABEL_OPTIONS = [
+  { value: "pending", label: "待处理" },
+  { value: "in_progress", label: "处理中" },
+  { value: "completed", label: "已完成" },
+];
+
+const labelColors: Record<string, string> = {
+  pending: "bg-red-100 text-red-800 border-red-300 font-medium",
+  in_progress: "bg-blue-50 text-blue-700 border-blue-200",
+  completed: "bg-green-50 text-green-700 border-green-200",
+};
+
 const replyColors: Record<string, string> = {
   not_replied: "bg-red-100 text-red-800 border-red-300 font-medium",
   in_progress: "bg-blue-50 text-blue-700 border-blue-200",
@@ -46,7 +58,10 @@ export function TicketStatusEditor({ ticket }: { ticket: SupportTicket }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
 
-  const update = async (field: "reply_status" | "progress", value: string) => {
+  const update = async (
+    field: "reply_status" | "progress" | "label",
+    value: string
+  ) => {
     setSaving(true);
     try {
       const res = await fetch(`/api/support/tickets/${ticket.id}`, {
@@ -68,6 +83,24 @@ export function TicketStatusEditor({ ticket }: { ticket: SupportTicket }) {
 
   return (
     <div className="flex flex-col gap-1.5 min-w-[150px]">
+      <Select
+        defaultValue={ticket.label ?? "pending"}
+        onValueChange={(v) => update("label", v as string)}
+        disabled={saving}
+      >
+        <SelectTrigger
+          className={`h-7 text-xs ${labelColors[ticket.label] ?? ""}`}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {LABEL_OPTIONS.map((o) => (
+            <SelectItem key={o.value} value={o.value}>
+              {o.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       <Select
         defaultValue={ticket.reply_status}
         onValueChange={(v) => update("reply_status", v as string)}
